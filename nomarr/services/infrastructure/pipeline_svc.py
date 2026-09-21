@@ -35,6 +35,7 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_STATE_FIELD,
 )
 from nomarr.helpers.dto.library_dto import LibraryPipelineStatusDTO
+from nomarr.helpers.exceptions import LibraryOperationConflict
 from nomarr.services.domain.calibration_svc import CALIBRATION_GENERATE_TASK_ID, CalibrationService
 from nomarr.services.domain.library_svc.task_ids import library_task_id, write_tags_task_id
 from nomarr.services.domain.tagging_svc import CALIBRATION_APPLY_TASK_ID, TaggingService
@@ -295,7 +296,6 @@ class LibraryPipelineService:
             library_auto_write = library.library_auto_write
             file_write_mode = library.file_write_mode
             if library_auto_write and file_write_mode != "none":
-                transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
                 logger.info(
                     "Library %s entering writing stage after calibration apply completion",
                     library.name,
@@ -367,6 +367,11 @@ class LibraryPipelineService:
                 reconcile_status = self.tagging_svc.get_reconcile_status(library)
                 remaining = reconcile_status.get("pending_count")
                 self.on_write_complete(library, remaining=remaining)
+            except LibraryOperationConflict:
+                # A lifecycle race is not an ordinary task failure and must not
+                # be converted into a false completion or a generic BTS error.
+                logger.info("Write completion deferred for %s due to lifecycle conflict", library.name)
+                return
             except Exception:
                 # A callback failure is a terminal write failure, not a
                 # successful completion. Make the work resumable before BTS
@@ -375,11 +380,16 @@ class LibraryPipelineService:
                 raise
 
         try:
+            self.db.library.regions.admit_tag_write(library)
             task_id = self.tagging_svc.start_write_tags_background(
                 library,
                 stop_event,
                 on_complete=on_complete,
+                admitted=True,
             )
+        except LibraryOperationConflict:
+            logger.info("Library %s write admission conflicted; leaving work resumable", library.name)
+            return
         except ValueError:
             logger.warning("Write-tags task already running for library %s", library.name)
             return

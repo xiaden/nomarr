@@ -22,6 +22,7 @@ from nomarr.helpers.constants.pipeline_states import (
     VALID_PIPELINE_TRANSITIONS,
 )
 from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryPipelineState, LibraryUpdate
+from nomarr.helpers.exceptions import LibraryOperationConflict
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.mappers.library_mapper import (
     library_from_row,
@@ -162,6 +163,46 @@ class LibraryRegionsDb:
             return LibraryPipelineState.defaults()
         state = self._library_repo.get_pipeline_state(library_id)
         return LibraryPipelineState.defaults() if state is None else LibraryPipelineState.from_mapping(state)
+
+    def admit_scan(self, library: Library) -> LibraryPipelineState:
+        """Atomically admit a scan through the repository-owned lifecycle intent."""
+        library_id = self._resolve_library_id(library)
+        if library_id is None:
+            raise LookupError(f"Library {library.name!r} does not exist")
+        state = self._pipeline_repo.admit_scan(library_id)
+        if not isinstance(state, dict):
+            state = LibraryPipelineState.defaults().to_state_mapping()
+            state["scan_state"] = "scanning"
+        return LibraryPipelineState.from_mapping(state)
+
+    def assert_hydration_allowed(self, library: Library) -> None:
+        """Reject hydration while this library is actively writing tags."""
+        library_id = self._resolve_library_id(library)
+        if library_id is None:
+            raise LookupError(f"Library {library.name!r} does not exist")
+        self._pipeline_repo.assert_hydration_allowed(library_id)
+
+    def assert_physical_write_allowed(self, library: Library) -> None:
+        """Reject physical writes while this library is actively scanning."""
+        library_id = self._resolve_library_id(library)
+        if library_id is None:
+            raise LookupError(f"Library {library.name!r} does not exist")
+        self._pipeline_repo.assert_physical_write_allowed(library_id)
+
+    def admit_tag_write(self, library: Library) -> LibraryPipelineState:
+        """Atomically admit tag writing, including target hydration debt."""
+        library_id = self._resolve_library_id(library)
+        if library_id is None:
+            raise LookupError(f"Library {library.name!r} does not exist")
+        state = self._pipeline_repo.admit_tag_write(library_id)
+        if not isinstance(state, dict):
+            raise LibraryOperationConflict(
+                "tag_write",
+                scan_state="not_scanned",
+                tag_write_state="not_written",
+                not_hydrated_count=1,
+            )
+        return LibraryPipelineState.from_mapping(state)
 
     def set_pipeline_axis(self, library: Library, axis: str, state: str) -> LibraryPipelineState:
         """Set one library pipeline axis and return the updated state.

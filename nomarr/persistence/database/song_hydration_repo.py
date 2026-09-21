@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, tuple_
 
-from nomarr.helpers.exceptions import EntityNotFoundError
+from nomarr.helpers.exceptions import EntityNotFoundError, LibraryOperationConflict
 from nomarr.persistence.database.repo_helpers import atomic_unit_of_work
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.song import Song
@@ -83,6 +83,7 @@ class SongHydrationRepository:
         song_tag_repo: SongTagRepository,
         song_state_repo: SongStateRepository,
         library_repo: LibraryRepository,
+        pipeline_repo: Any | None = None,
     ) -> None:
         """Store the shared session and collaborator repos.
 
@@ -95,6 +96,32 @@ class SongHydrationRepository:
         self._song_tag_repo = song_tag_repo
         self._song_state_repo = song_state_repo
         self._library_repo = library_repo
+        self._pipeline_repo = pipeline_repo
+
+    def assert_hydration_allowed(self, song: SongIdentity) -> None:
+        library = self._library_repo.get_library_by_uuid(song.library.library_uuid)
+        if library is None:
+            return
+        if self._pipeline_repo is not None:
+            self._pipeline_repo.assert_hydration_allowed(int(library["id"]))
+
+    def refresh_hydrated_song(self, song: SongIdentity, input: HydrateSongInput, modified_time_ms: int) -> None:
+        """Refresh selected file-derived projections without changing lifecycle state."""
+        with atomic_unit_of_work(self._session):
+            resolved = self._resolve_song_id(song)
+            song_id = int(resolved["id"])
+            tag_rows = _expand_tag_rows(input.parsed_nom_tags, input.entity_tags)
+            tag_ids = self._tag_repo.get_or_create_tags_batch(tag_rows) if tag_rows else {}
+            edges = [
+                {"song_id": song_id, "tag_id": tag_ids[(row["namespace"], str(row["name"]), str(row["value"]))]}
+                for row in tag_rows
+            ]
+            self._song_tag_repo.replace_song_tags_batch(edges, song_ids=[song_id])
+            if input.metadata_cache:
+                self._song_repo.update_song_metadata_fields(song_id, dict(input.metadata_cache))
+            if input.duration_seconds is not None:
+                self._song_repo.update_song_duration(song_id, input.duration_seconds)
+            self._song_repo.update_song_modified_time(song_id, modified_time_ms)
 
     def hydrate_song(self, song: SongIdentity, input: HydrateSongInput) -> None:
         """Hydrate one song inside a single atomic unit of work.
@@ -117,6 +144,8 @@ class SongHydrationRepository:
                    metadata-cache fields, optional duration).
 
         """
+        if self._pipeline_repo is not None:
+            self.assert_hydration_allowed(song)
         with atomic_unit_of_work(self._session):
             resolved = self._resolve_song_id(song)
             song_id = int(resolved["id"])
@@ -221,6 +250,10 @@ class SongHydrationRepository:
             chunk = inputs[start : start + chunk_size]
             try:
                 self._hydrate_chunk(chunk)
+            except LibraryOperationConflict:
+                # Lifecycle conflicts are authoritative safety outcomes, not a
+                # failed chunk. Never count or conceal them as ordinary errors.
+                raise
             except Exception:
                 # Chunk unit already rolled back; keep going, but do not hide
                 # the failed chunk from operators.
@@ -234,6 +267,14 @@ class SongHydrationRepository:
 
     def _hydrate_chunk(self, inputs: Sequence[tuple[SongIdentity, HydrateSongInput]]) -> None:
         """Run one chunk of hydrations as a single atomic unit of work."""
+        # Guard every owning library before the first tag/entity/metadata write.
+        # A lifecycle conflict is safety authority, not a failed chunk: it must
+        # propagate rather than being converted into a lower committed count.
+        if self._pipeline_repo is not None:
+            for library_uuid in dict.fromkeys(song.library.library_uuid for song, _ in inputs):
+                library = self._library_repo.get_library_by_uuid(library_uuid)
+                if library is not None:
+                    self._pipeline_repo.assert_hydration_allowed(int(library["id"]))
         with atomic_unit_of_work(self._session):
             resolved = self._resolve_song_ids_bulk([song for song, _ in inputs])
             song_ids = [row["id"] for row in resolved]

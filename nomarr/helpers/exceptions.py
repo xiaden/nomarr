@@ -26,6 +26,32 @@ class LibraryAlreadyScanningError(ValueError):
     """Raised when a scan is requested for a library that is already scanning."""
 
 
+class LibraryOperationConflict(ValueError):  # noqa: N818
+    """Raised when a library lifecycle operation cannot be admitted.
+
+    The axis values and hydration count are read inside the persistence-owned
+    admission transaction and therefore are authoritative facts for adapters.
+    """
+
+    def __init__(
+        self,
+        operation: str,
+        *,
+        scan_state: str,
+        tag_write_state: str,
+        not_hydrated_count: int = 0,
+    ) -> None:
+        self.operation = operation
+        self.scan_state = scan_state
+        self.tag_write_state = tag_write_state
+        self.not_hydrated_count = not_hydrated_count
+        super().__init__(
+            f"LibraryOperationConflict: operation {operation!r} conflicts with lifecycle state "
+            f"scan_state={scan_state!r}, tag_write_state={tag_write_state!r}, "
+            f"not_hydrated={not_hydrated_count}"
+        )
+
+
 class MisconfiguredError(ValueError):
     """Raised at request time when a required configuration value is absent or invalid.
 

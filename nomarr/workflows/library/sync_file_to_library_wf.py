@@ -16,6 +16,7 @@ from nomarr.components.library.library_song_mutation_comp import set_chromaprint
 from nomarr.components.library.song_sync_comp import mark_song_processed, save_song_tags
 from nomarr.components.metadata.entity_seeding_comp import build_song_tag_assignments
 from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
+from nomarr.helpers.exceptions import LibraryOperationConflict
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -80,6 +81,8 @@ def _sync_tags_and_entities(
         if assignments:
             db.library.replace_song_tags(song, assignments)
         logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
+    except LibraryOperationConflict:
+        raise
     except Exception as entity_error:
         logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}", exc_info=True)
 
@@ -172,5 +175,7 @@ def sync_file_to_library(
 
         _sync_tags_and_entities(db, identity, file_path, metadata, namespace, tagged_version)
 
+    except LibraryOperationConflict:
+        raise
     except Exception as e:
         logger.warning(f"[sync_file_to_library] Failed to sync {file_path}: {e}", exc_info=True)

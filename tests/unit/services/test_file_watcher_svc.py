@@ -1095,3 +1095,36 @@ class TestRootPresenceContract:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_polling_loop_skips_typed_lifecycle_conflict(mock_db) -> None:
+    """Watcher polling defers lifecycle conflicts and continues polling."""
+    mock_db.library.update_library("Test Library", watch_mode="poll")
+    calls: list[str] = []
+
+    class ConflictThenSuccess:
+        def get_library_by_name(self, name):
+            return Library(name=name, root_path="/music")
+
+        def start_quick_scan(self, library) -> None:
+            calls.append(library.name)
+            if len(calls) == 1:
+                raise file_watcher_svc_module.LibraryOperationConflict(
+                    "scan", scan_state="scanning", tag_write_state="not_writing"
+                )
+
+    watcher = FileWatcherService(
+        db=mock_db,
+        library_service=ConflictThenSuccess(),
+        polling_interval_seconds=0.05,
+    )
+    with patch(
+        "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
+        side_effect=lambda _db, library: _mock_get_library_watch_config(mock_db, library),
+    ):
+        watcher.start_watching_library("Test Library")
+        time.sleep(0.16)
+    watcher.stop_watching_library("Test Library")
+    assert len(calls) >= 2

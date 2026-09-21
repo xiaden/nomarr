@@ -182,6 +182,18 @@ class SongSyncResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SongReplacementInput:
+    """Replacement scan snapshot for a locator-addressed reimport."""
+
+    path: str
+    scan: SongScanUpdate
+
+    def __post_init__(self) -> None:
+        if not self.path.strip():
+            raise ValueError("SongReplacementInput.path must not be blank")
+
+
+@dataclass(frozen=True, slots=True)
 class SongUpsertInput:
     """Application command to upsert a single song within a library.
 
@@ -209,6 +221,7 @@ __all__ = [
     "SongIdentity",
     "SongPathUpdate",
     "SongRemoval",
+    "SongReplacementInput",
     "SongScanUpdate",
     "SongSyncResult",
     "SongUpsertInput",

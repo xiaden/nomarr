@@ -343,6 +343,10 @@ class SongRepository:
             self._session.commit()
             return updated
 
+    def update_song_modified_time(self, song_id: int, modified_time: int) -> None:
+        """Update a song mtime inside a caller-owned unit of work."""
+        self._session.execute(update(_T).where(_T.c.id == song_id).values(modified_time=modified_time))
+
     def update_song_metadata_fields(self, song_id: int, fields: dict[str, Any]) -> None:
         """Update ONLY the supplied metadata-cache fields on a song row.
 
@@ -364,6 +368,10 @@ class SongRepository:
             return
         stmt = update(_T).where(_T.c.id == song_id).values(**writable)
         self._session.execute(stmt)
+
+    def update_song_duration(self, song_id: int, duration_seconds: float) -> None:
+        """Update duration inside a caller-owned unit of work."""
+        self._session.execute(update(_T).where(_T.c.id == song_id).values(duration_seconds=duration_seconds))
 
     def set_duration_if_unset(self, song_id: int, duration_seconds: float) -> bool:
         """Set ``duration_seconds`` only when the row does not already have one.
@@ -432,6 +440,10 @@ class SongRepository:
             song_values = {sid: fields[col] for sid, fields in fields_by_song.items() if col in fields}
             stmt = update(_T).where(_T.c.id.in_(list(song_values))).values(**{col: case(song_values, value=_T.c.id)})
             self._session.execute(stmt)
+
+    def delete_song_uncommitted(self, song_id: int) -> None:
+        """Delete one song within a caller-owned unit of work."""
+        delete_by_key(_T, song_id, session=self._session)
 
     def delete_song(self, song_id: int) -> None:
         """Delete a single song by primary key."""

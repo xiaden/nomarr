@@ -232,6 +232,13 @@ class FileTagsResult:
 
 
 # Failure-reason vocabulary for a tag write (DD §8.7), consumed by SafeWriteResult/WriteResult.
+RecoveryMode = Literal["none", "files", "database"]
+RecoveryEvidence = Literal["fingerprint_same", "fingerprint_different", "fingerprint_indeterminate"]
+
+
+RecoveryTerminalOutcome = Literal["pending", "rebaselined", "refreshed", "replaced", "raced", "failed", "written"]
+
+
 WriteOutcome = Literal[
     "modified_externally",
     "audio_sanity_failed",

@@ -174,3 +174,23 @@ class TestSyncFileToLibraryFastPath:
         assert result is None
         mock_tags.assert_not_called()
         assert any("Failed to sync" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_sync_fast_path_preserves_lifecycle_conflict() -> None:
+    """The sync workflow does not downgrade an admission conflict to a warning."""
+    from nomarr.helpers.exceptions import LibraryOperationConflict
+
+    db = MagicMock()
+    conflict = LibraryOperationConflict("hydrate", scan_state="not_scanned", tag_write_state="writing")
+    with patch(f"{WF}._sync_tags_and_entities", side_effect=conflict), pytest.raises(LibraryOperationConflict):
+        sync_file_to_library(
+            db,
+            "/music/song.mp3",
+            _metadata(),
+            namespace="nom",
+            tagged_version=None,
+            library=None,
+            song=_identity(),
+        )

@@ -13,11 +13,9 @@ from typing import TYPE_CHECKING
 
 from nomarr.components.library.scan_lifecycle_comp import (
     check_interrupted_scan,
-    is_library_scanning,
     mark_scan_started,
-    transition_to_scanning,
 )
-from nomarr.helpers.exceptions import DuplicateEntityError, LibraryAlreadyScanningError
+from nomarr.helpers.exceptions import LibraryOperationConflict
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
@@ -49,9 +47,13 @@ def scan_setup_workflow(
         LibraryAlreadyScanningError: If the library is already being scanned.
 
     """
-    if is_library_scanning(db, library):
-        msg = f"Library {library.name} is already being scanned"
-        raise LibraryAlreadyScanningError(msg)
+    try:
+        db.library.regions.admit_scan(library)
+    except LibraryOperationConflict:
+        # Preserve authoritative lifecycle facts for service and transport adapters.
+        # Admission owns conflict classification; this workflow must not collapse it
+        # into the legacy scan-only exception.
+        raise
 
     interrupted, prev_scan_type = check_interrupted_scan(db, library)
     if interrupted:
@@ -71,15 +73,6 @@ def scan_setup_workflow(
 
     # The setup workflow runs before the background scan starts, so it owns
     # creation of the scan row.  Progress updates require that row to exist.
-    try:
-        # The database enforces one in-progress row per library.  This insert
-        # is the atomic part of the guard: two requests may both observe the
-        # old axis value, but only one can claim the active scan row.
-        mark_scan_started(db, library, scan_type)
-    except DuplicateEntityError:
-        msg = f"Library {library.name} is already being scanned"
-        raise LibraryAlreadyScanningError(msg) from None
-
-    transition_to_scanning(db, library)
+    mark_scan_started(db, library, scan_type)
 
     return library

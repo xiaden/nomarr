@@ -54,7 +54,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_SCANNED,
 )
 from nomarr.helpers.constants.pipeline_states import SCAN_NOT_SCANNED, SCAN_STATE_FIELD
-from nomarr.helpers.exceptions import TaskCancelledError
+from nomarr.helpers.exceptions import LibraryOperationConflict, TaskCancelledError
 from nomarr.helpers.fs_contract import classify_os_error
 from nomarr.helpers.time_helper import internal_s, now_ms
 from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
@@ -328,6 +328,8 @@ def scan_library_full_workflow(
                     reconciled_folders[folder.rel_path] = frozenset(batch.enumerated_entries)
                     break
 
+                except LibraryOperationConflict:
+                    raise
                 except Exception as e:
                     if attempt == 0:
                         logger.debug(
@@ -431,6 +433,8 @@ def scan_library_full_workflow(
                         validation["files_checked"],
                         validation["expected_heads"],
                     )
+            except LibraryOperationConflict:
+                raise
             except Exception as e:
                 logger.warning("Tag validation failed: %s", e, exc_info=True)
                 warnings.append(f"Tag validation error: {e}")
@@ -460,6 +464,8 @@ def scan_library_full_workflow(
 
         return {**stats, "scan_duration_s": scan_duration, "warnings": warnings, "scan_id": scan_id}
 
+    except LibraryOperationConflict:
+        raise
     except Exception as e:
         if isinstance(e, ScanCancelledError):
             logger.info("Full scan cancelled for library %s", library.name)

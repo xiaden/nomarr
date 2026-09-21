@@ -162,3 +162,26 @@ class TestProcessFile:
             _process_file(db, _locator())
 
         db.library.songs.hydrate_song.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_process_file_preserves_lifecycle_conflict() -> None:
+    """Hydration admission conflicts propagate without worker-side error mutation."""
+    from nomarr.helpers.exceptions import LibraryOperationConflict
+
+    db = _make_db()
+    conflict = LibraryOperationConflict("hydrate", scan_state="not_scanned", tag_write_state="writing")
+    db.library.songs.hydrate_song.side_effect = conflict
+    path_mock = _valid_path_mock()
+    metadata = {"duration": 1.0, "nom_tags": {}}
+
+    with (
+        patch("nomarr.components.infrastructure.path_comp.build_library_path_from_input", return_value=path_mock),
+        patch("nomarr.components.library.metadata_extraction_comp.extract_metadata", return_value=metadata),
+        patch("nomarr.components.tagging.tag_parsing_comp.parse_tag_values", return_value={}),
+        patch("nomarr.components.metadata.entity_seeding_comp.extract_entity_tag_mapping", return_value={}),
+        patch("nomarr.components.metadata.metadata_cache_comp.compute_metadata_cache_fields", return_value={}),
+        pytest.raises(LibraryOperationConflict),
+    ):
+        _process_file(db, _locator())

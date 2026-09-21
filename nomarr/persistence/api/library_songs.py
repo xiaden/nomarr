@@ -36,6 +36,7 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     SongIdentity,
     SongPathUpdate,
     SongRemoval,
+    SongReplacementInput,
     SongUpsertInput,
 )
 from nomarr.helpers.dataclasses.song_dataclass import ChromaprintSongMatches
@@ -615,6 +616,36 @@ class LibrarySongsDb:
             for command, payload in zip(commands, payloads, strict=True)
         ]
 
+    def replace_song_for_reimport(self, song: SongIdentity, replacement: SongReplacementInput) -> SongIdentity:
+        """Atomically remove and reinsert a locator-addressed song snapshot."""
+        library_id = self._resolve_library_identity(song.library)
+        old = self._song_repo.get_song_by_normalized_path(library_id, song.normalized_path)
+        if old is None:
+            raise LookupError("song locator does not resolve")
+        payload = {
+            "path": replacement.path,
+            "normalized_path": replacement.scan.normalized_path,
+            "file_size": replacement.scan.file_size,
+            "modified_time": replacement.scan.modified_time,
+            "duration_seconds": replacement.scan.duration_seconds,
+            "chromaprint": None,
+            "scanned_at": replacement.scan.scanned_at or now_ms().value,
+        }
+        if payload["normalized_path"] is None:
+            raise ValueError("replacement normalized_path must not be null")
+        try:
+            self._song_repo.delete_song_uncommitted(int(old["id"]))
+            ids = self._song_repo.upsert_songs_for_library(library_id, [payload], commit=False)
+            if len(ids) != 1:
+                raise RuntimeError("replacement insert returned an unexpected row count")
+            new_id = self._song_repo.get_song_ids_by_paths(library_id, [replacement.path])[replacement.path]
+            self._song_state_repo.initialize_song_states([new_id], commit=False)
+            self._session.commit()
+        except Exception:
+            self._session.rollback()
+            raise
+        return SongIdentity(song.library, str(payload["normalized_path"]))
+
     def move_library_song(self, command: SongPathUpdate) -> SongIdentity | None:
         """Atomically relocate one existing Song from its source locator.
 
@@ -780,6 +811,10 @@ class LibrarySongsDb:
     # ------------------------------------------------------------------
     # Song hydration (transactional intent)
     # ------------------------------------------------------------------
+
+    def refresh_hydrated_song(self, song: SongIdentity, input: HydrateSongInput, modified_time_ms: int) -> None:
+        """Refresh selected projections without transitioning hydration state."""
+        self._song_hydration_repo.refresh_hydrated_song(song, input, modified_time_ms)
 
     def hydrate_song(self, song: SongIdentity, input: HydrateSongInput) -> None:
         """Hydrate a single song atomically from an already-parsed input.

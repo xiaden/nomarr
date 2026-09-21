@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         SongIdentity,
         SongPathUpdate,
         SongRemoval,
+        SongReplacementInput,
         SongUpsertInput,
     )
     from nomarr.helpers.dataclasses.song_dataclass import ChromaprintSongMatches, Song, SongTagMatch
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
         TagRef,
         TagUsage,
     )
+    from nomarr.helpers.dto.hydration_dto import HydrateSongInput
     from nomarr.persistence.api.library_regions import LibraryRegionsDb
     from nomarr.persistence.api.library_scans import LibraryScansDb
     from nomarr.persistence.api.library_songs import LibrarySongsDb
@@ -177,6 +179,20 @@ class LibraryDb:
         """Return the pipeline state for a library (defaults when no rows)."""
         return self._regions.get_pipeline_state(library)
 
+    def admit_scan(self, library: Library) -> LibraryPipelineState:
+        """Atomically admit scan-owned work for a library."""
+        return self._regions.admit_scan(library)
+
+    def assert_hydration_allowed(self, library: Library) -> None:
+        return self.regions.assert_hydration_allowed(library)
+
+    def assert_physical_write_allowed(self, library: Library) -> None:
+        return self.regions.assert_physical_write_allowed(library)
+
+    def admit_tag_write(self, library: Library) -> LibraryPipelineState:
+        """Atomically admit DB-to-file tag writing for a library."""
+        return self._regions.admit_tag_write(library)
+
     def set_pipeline_axis(self, library: Library, axis: str, state: str) -> LibraryPipelineState:
         """Set one library pipeline axis and return the updated state."""
         return self._regions.set_pipeline_axis(library, axis, state)
@@ -265,6 +281,12 @@ class LibraryDb:
     ) -> ChromaprintSongMatches:
         """Forward bounded chromaprint matches with explicit completeness."""
         return self._songs.list_library_songs_by_chromaprint(library, chromaprint, limit=limit)
+
+    def refresh_hydrated_song(self, song: SongIdentity, input: HydrateSongInput, modified_time_ms: int) -> None:
+        return self._songs.refresh_hydrated_song(song, input, modified_time_ms)
+
+    def replace_song_for_reimport(self, song: SongIdentity, replacement: SongReplacementInput) -> SongIdentity:
+        return self._songs.replace_song_for_reimport(song, replacement)
 
     def add_song_to_library(self, command: SongUpsertInput) -> SongIdentity:
         return self._songs.add_song_to_library(command)

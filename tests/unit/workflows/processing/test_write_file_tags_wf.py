@@ -16,6 +16,7 @@ from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 from nomarr.helpers.dto.path_dto import LibraryPath
+from nomarr.helpers.exceptions import LibraryOperationConflict
 from nomarr.helpers.fs_contract import FsFact
 from nomarr.workflows.processing.write_file_tags_wf import (
     WriteResult,
@@ -131,6 +132,7 @@ def _song(
     path: str = "/music/song.mp3",
     normalized_path: str = "song.mp3",
     modified_time: int = 1000,
+    chromaprint: str | None = None,
 ) -> Song:
     """Build a semantic ``Song`` for path-resolution and workflow tests."""
     return Song(
@@ -139,7 +141,7 @@ def _song(
         file_size=100,
         modified_time=modified_time,
         duration_seconds=None,
-        chromaprint=None,
+        chromaprint=chromaprint,
         needs_tagging=False,
         is_valid=True,
         tagged=False,
@@ -277,6 +279,18 @@ class TestWriteFileTagsWorkflow:
             target_mode=mode,
             has_calibration=calibration,
         )
+
+    def test_scanning_conflict_is_raised_before_physical_writer(self, workflow: SimpleNamespace) -> None:
+        """The real workflow guard prevents TagWriter mutation during scanning."""
+        conflict = LibraryOperationConflict("physical_write", scan_state="scanning", tag_write_state="not_written")
+        workflow.db.library.regions = MagicMock(spec=["assert_physical_write_allowed"])
+        workflow.db.library.regions.assert_physical_write_allowed.side_effect = conflict
+
+        with pytest.raises(LibraryOperationConflict):
+            self._run(workflow)
+
+        workflow.writer_cls.return_value.write_safe.assert_not_called()
+        assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
 
     def test_missing_locator_releases_claim_and_reports_song_record_missing(self, workflow: SimpleNamespace) -> None:
         """A stale/missing locator is a clean domain miss that releases the exact claim."""
@@ -426,6 +440,107 @@ class TestWriteFileTagsWorkflow:
         assert result.fs_fact is None
         assert result.file_key is workflow.identity
         assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
+
+    def test_missing_persisted_fingerprint_still_attempts_exactly_once(
+        self, workflow: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workflow.db.library.get_song.return_value = _song(chromaprint=None)
+        workflow.writer_cls.return_value.write_safe.return_value = SafeWriteResult(
+            success=False, outcome="modified_externally"
+        )
+        calls: list[object] = []
+        monkeypatch.setattr(
+            "nomarr.components.library.metadata_extraction_comp.compute_chromaprint_for_file",
+            lambda path: calls.append(path) or "fingerprint",
+            raising=False,
+        )
+        result = self._run(workflow)
+        assert result.evidence_class == "fingerprint_indeterminate"
+        assert calls == [_library_path()]
+
+    def test_same_fingerprint_none_performs_no_recovery_mutation(
+        self, workflow: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workflow.db.library.get_song.return_value = _song(chromaprint="fingerprint")
+        workflow.writer_cls.return_value.write_safe.return_value = SafeWriteResult(
+            success=False, outcome="modified_externally"
+        )
+        monkeypatch.setattr(
+            "nomarr.components.library.metadata_extraction_comp.compute_chromaprint_for_file",
+            lambda _path: "fingerprint",
+            raising=False,
+        )
+        result = write_file_tags_workflow(
+            workflow.db,
+            workflow.identity,
+            worker_id="reconcile:lib1",
+            target_mode="full",
+            has_calibration=True,
+            requested_mode="none",
+        )
+        assert result.success is False
+        assert result.evidence_class == "fingerprint_same"
+        assert result.terminal_outcome == "pending"
+        assert workflow.db.library.refresh_hydrated_song.call_count == 0
+        assert workflow.writer_cls.return_value.write_safe.call_count == 1
+
+    def test_same_fingerprint_database_refresh_commits_before_success(
+        self, workflow: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workflow.db.library.get_song.return_value = _song(chromaprint="fingerprint")
+        workflow.writer_cls.return_value.write_safe.return_value = SafeWriteResult(
+            success=False, outcome="modified_externally"
+        )
+        monkeypatch.setattr(
+            "nomarr.components.library.metadata_extraction_comp.compute_chromaprint_for_file",
+            lambda _path: "fingerprint",
+            raising=False,
+        )
+        monkeypatch.setattr(f"{_MODULE}._refresh_input", lambda _path: object())
+        monkeypatch.setattr("os.stat", lambda _path, **_kwargs: SimpleNamespace(st_mtime=2.0, st_size=100))
+        workflow.db.library.refresh_hydrated_song.return_value = None
+        result = write_file_tags_workflow(
+            workflow.db,
+            workflow.identity,
+            worker_id="reconcile:lib1",
+            target_mode="full",
+            has_calibration=True,
+            requested_mode="database",
+        )
+        assert result.success is True
+        assert result.terminal_outcome == "refreshed"
+        workflow.db.library.refresh_hydrated_song.assert_called_once()
+        workflow.writer_cls.return_value.write_safe.assert_called_once()
+
+    def test_different_fingerprint_requires_successful_replacement(
+        self, workflow: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workflow.db.library.get_song.return_value = _song(chromaprint="old")
+        workflow.writer_cls.return_value.write_safe.return_value = SafeWriteResult(
+            success=False, outcome="modified_externally"
+        )
+        monkeypatch.setattr(
+            "nomarr.components.library.metadata_extraction_comp.compute_chromaprint_for_file",
+            lambda _path: "new",
+            raising=False,
+        )
+        monkeypatch.setattr("os.stat", lambda _path, **_kwargs: SimpleNamespace(st_mtime=2.0, st_size=100))
+        workflow.db.library.replace_song_for_reimport.side_effect = RuntimeError("replacement failed")
+        monkeypatch.setattr(
+            f"{_MODULE}._replacement_input",
+            lambda _song, _path: object(),
+        )
+        result = write_file_tags_workflow(
+            workflow.db,
+            workflow.identity,
+            worker_id="reconcile:lib1",
+            target_mode="full",
+            has_calibration=True,
+            requested_mode="none",
+        )
+        assert result.success is False
+        assert result.terminal_outcome == "failed"
+        workflow.db.library.replace_song_for_reimport.assert_called_once()
 
     def test_unexpected_exception_is_redacted(self, workflow: SimpleNamespace) -> None:
         """An unexpected failure stays generic and leaks no path or locator detail."""

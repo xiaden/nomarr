@@ -19,7 +19,6 @@ from nomarr.helpers.constants.pipeline_states import (
     SCAN_NOT_SCANNED,
     SCAN_STATE_FIELD,
     WRITE_COMPLETE,
-    WRITE_IN_PROGRESS,
     WRITE_NOT_WRITTEN,
     WRITE_STATE_FIELD,
 )
@@ -287,12 +286,13 @@ class TestOnApplyComplete:
 
         pipeline_service.on_apply_complete()
 
-        mock_db.app.upsert_pipeline_state.assert_called_once_with(
+        mock_db.library.regions.admit_tag_write.assert_called_once_with(library)
+        mock_tagging_svc.start_write_tags_background.assert_called_once_with(
             library,
-            WRITE_STATE_FIELD,
-            {"state": WRITE_IN_PROGRESS},
+            mock_tagging_svc.start_write_tags_background.call_args.args[1],
+            on_complete=mock_tagging_svc.start_write_tags_background.call_args.kwargs["on_complete"],
+            admitted=True,
         )
-        mock_tagging_svc.start_write_tags_background.assert_called_once()
 
     def test_on_apply_complete_skips_deleted_library(
         self,

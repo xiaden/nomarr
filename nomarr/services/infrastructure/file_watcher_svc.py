@@ -37,7 +37,12 @@ from watchdog.observers import Observer
 
 from nomarr.components.library import get_library_watch_config, list_watchable_libraries
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
-from nomarr.helpers.exceptions import FilesystemError, LibraryAlreadyScanningError, LibraryNotFoundError
+from nomarr.helpers.exceptions import (
+    FilesystemError,
+    LibraryAlreadyScanningError,
+    LibraryNotFoundError,
+    LibraryOperationConflict,
+)
 from nomarr.helpers.fs_contract import probe_fact
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
 
@@ -411,10 +416,13 @@ class FileWatcherService:
                 logger.warning(f"Library {library_id} no longer exists, stopping watcher")
                 self._schedule_cleanup(library_id)
                 return
-            except LibraryAlreadyScanningError:
-                logger.debug(f"Library {library_id} is already being scanned, skipping this poll")
-                # Benign startup race: watcher may poll before recover_stale_states() runs, so skipping is correct.
-                continue  # Don't exit the loop! Continue polling.
+            except (LibraryAlreadyScanningError, LibraryOperationConflict):
+                logger.debug(
+                    "Library %s lifecycle admission conflicted; skipping this poll",
+                    library_id,
+                )
+                # Benign race: watcher work remains resumable and polling continues.
+                continue
             except Exception as e:
                 logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
 
@@ -570,5 +578,7 @@ class FileWatcherService:
                     logger.error(f"Library {library_id} not found during debounce scan")
                     continue
                 self.library_service.start_quick_scan(library)
+            except LibraryOperationConflict:
+                logger.info("Deferred watcher scan for library %s due to lifecycle conflict", library_id)
             except Exception as e:
                 logger.error(f"Failed to trigger scan for library {library_id}: {e}", exc_info=True)

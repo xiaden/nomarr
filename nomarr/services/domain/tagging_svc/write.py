@@ -13,7 +13,7 @@ from nomarr.components.library.reconciliation_comp import (
 )
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import WriteTagsResult
-from nomarr.helpers.exceptions import TaskCancelledError
+from nomarr.helpers.exceptions import LibraryOperationConflict, TaskCancelledError
 from nomarr.services.domain.library_svc.task_ids import write_tags_task_id
 from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow, remove_file_tags_workflow
 from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
@@ -140,6 +140,25 @@ class TaggingWriteMixin:
             pending).
 
         """
+        self.db.library.regions.admit_tag_write(library)
+        return self._write_admitted_tags_to_files(
+            library,
+            batch_size=batch_size,
+            namespace=namespace,
+            exclude_locators=exclude_locators,
+            retry_counts=retry_counts,
+        )
+
+    def _write_admitted_tags_to_files(
+        self,
+        library: Library,
+        batch_size: int = 100,
+        namespace: str = "nom",
+        *,
+        exclude_locators: set[SongIdentity] | None = None,
+        retry_counts: dict[SongIdentity, int] | None = None,
+    ) -> WriteTagsResult:
+        """Execute one admitted write batch without reacquiring lifecycle state."""
         target_mode = library.file_write_mode
         calibration_hash = self.db.app.get_calibration_version()
         has_calibration = bool(calibration_hash)
@@ -197,6 +216,8 @@ class TaggingWriteMixin:
                     release_claim(self.db, file_key, worker_id)
                     logger.warning("[reconcile] Failed to write tags for locator: %s", file_key)
                     _record_failure(file_key, result)
+            except LibraryOperationConflict:
+                raise
             except Exception as e:
                 failed += 1
                 logger.exception("[reconcile] Error processing locator: %s", e)
@@ -226,6 +247,8 @@ class TaggingWriteMixin:
         library: Library,
         stop_event: threading.Event,
         on_complete: Callable[[], None] | None = None,
+        *,
+        admitted: bool = False,
     ) -> str:
         """Dispatch a non-blocking background write-tags loop for a library.
 
@@ -260,6 +283,11 @@ class TaggingWriteMixin:
             cancellation.
 
         """
+        # Admission completes before BTS dispatch; the background loop reuses
+        # that durable lifecycle state for each bounded batch. Pipeline callers
+        # may pass ``admitted`` when they own the same pre-dispatch admission.
+        if not admitted:
+            self.db.library.regions.admit_tag_write(library)
         task_id = write_tags_task_id(library)
 
         def _task() -> WriteTagsResult:
@@ -267,7 +295,7 @@ class TaggingWriteMixin:
             retry_counts: dict[SongIdentity, int] = {}
             last_result = WriteTagsResult(processed=0, remaining=0, failed=0)
             while not stop_event.is_set():
-                result = self.write_tags_to_files(
+                result = self._write_admitted_tags_to_files(
                     library,
                     exclude_locators=exclude,
                     retry_counts=retry_counts,

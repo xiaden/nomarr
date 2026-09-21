@@ -101,6 +101,7 @@ class Database:
             song_tag_repo=self._song_tag_repo,
             song_state_repo=self._song_state_repo,
             library_repo=self._library_repo,
+            pipeline_repo=self._pipeline_repo,
         )
         self._vector_repo = VectorRepo(self._scoped)
         self._model_repo = ModelRepo(self._scoped)

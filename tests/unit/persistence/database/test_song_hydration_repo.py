@@ -22,7 +22,7 @@ from nomarr.helpers.constants.file_states import (
 )
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto.hydration_dto import HydrateSongInput
-from nomarr.helpers.exceptions import EntityNotFoundError
+from nomarr.helpers.exceptions import EntityNotFoundError, LibraryOperationConflict
 from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.song_hydration_repo import (
     SongHydrationRepository,
@@ -124,6 +124,38 @@ def _build_repo(session) -> SongHydrationRepository:
         song_state_repo=SongStateRepository(session),
         library_repo=LibraryRepository(session),
     )
+
+
+def test_batch_hydration_conflict_propagates_before_mutation() -> None:
+    """A writing lifecycle conflict is not counted as a committed chunk."""
+    from unittest.mock import MagicMock
+
+    identity = SongIdentity(
+        library=LibraryIdentity(library_uuid="11111111-1111-1111-1111-111111111111"),
+        normalized_path="song.mp3",
+    )
+    pipeline_repo = MagicMock(spec=["assert_hydration_allowed"])
+    pipeline_repo.assert_hydration_allowed.side_effect = LibraryOperationConflict(
+        "hydration", scan_state="scanned", tag_write_state="writing"
+    )
+    library_repo = MagicMock()
+    library_repo.get_library_by_uuid.return_value = {"id": 7}
+    song_repo = MagicMock()
+    repo = SongHydrationRepository(
+        session=MagicMock(),
+        song_repo=song_repo,
+        tag_repo=MagicMock(),
+        song_tag_repo=MagicMock(),
+        song_state_repo=MagicMock(),
+        library_repo=library_repo,
+        pipeline_repo=pipeline_repo,
+    )
+
+    with pytest.raises(LibraryOperationConflict):
+        repo.hydrate_songs_batch([(identity, _make_input())])
+
+    song_repo.update_song_metadata_fields.assert_not_called()
+    repo._song_tag_repo.replace_song_tags_batch.assert_not_called()
 
 
 class _StatementCounter:

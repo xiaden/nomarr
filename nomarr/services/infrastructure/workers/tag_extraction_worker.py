@@ -29,6 +29,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
 )
+from nomarr.helpers.exceptions import LibraryOperationConflict
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
@@ -157,6 +158,8 @@ class TagExtractionWorker(threading.Thread):
                 _process_file(self._db, song)
                 consecutive_errors = 0
                 logger.debug("[%s] Extracted tags", self._worker_id)
+            except LibraryOperationConflict:
+                logger.info("[%s] Hydration deferred by lifecycle conflict", self._worker_id)
             except Exception:
                 logger.exception("[%s] Error extracting tags", self._worker_id)
                 try:

@@ -98,7 +98,7 @@ class TestStartWriteTagsBackground:
         library = _make_library()
         with patch.object(
             service,
-            "write_tags_to_files",
+            "_write_admitted_tags_to_files",
             return_value=SimpleNamespace(remaining=0),
         ) as mock_write_tags:
             task_id = service.start_write_tags_background(library, threading.Event())
@@ -122,7 +122,7 @@ class TestStartWriteTagsBackground:
         service = _make_service(bts=mock_bts)
         with patch.object(
             service,
-            "write_tags_to_files",
+            "_write_admitted_tags_to_files",
             return_value=SimpleNamespace(remaining=5),
         ) as mock_write_tags:
             stop_event = threading.Event()
@@ -166,7 +166,7 @@ class TestStartWriteTagsBackground:
             SimpleNamespace(remaining=0),
         ]
         with (
-            patch.object(service, "write_tags_to_files", side_effect=write_results) as mock_write_tags,
+            patch.object(service, "_write_admitted_tags_to_files", side_effect=write_results) as mock_write_tags,
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
                 return_value=5,
@@ -258,7 +258,7 @@ class TestGetReconcileStatus:
         batch_result = WriteTagsResult(processed=1, remaining=0, failed=1, outcome="complete")
         mock_bts.start_task.side_effect = lambda task: task.fn()
 
-        with patch.object(service, "write_tags_to_files", return_value=batch_result):
+        with patch.object(service, "_write_admitted_tags_to_files", return_value=batch_result):
             result = service.start_write_tags_background(_make_library(), threading.Event())
 
         assert result == batch_result

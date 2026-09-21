@@ -28,14 +28,15 @@ from nomarr.components.library.reconciliation_comp import release_claim, set_fil
 from nomarr.components.processing.file_write_comp import resolve_library_root
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags, TagValue
+from nomarr.helpers.exceptions import LibraryOperationConflict
 from nomarr.helpers.fs_contract import FsFact
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
-    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity, SongReplacementInput
     from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
-    from nomarr.helpers.dto.library_dto import WriteOutcome
+    from nomarr.helpers.dto.library_dto import RecoveryEvidence, RecoveryMode, RecoveryTerminalOutcome, WriteOutcome
     from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
@@ -52,6 +53,10 @@ class WriteResult:
     success: bool  # Whether write succeeded
     fs_fact: FsFact | None = None  # Structured filesystem fact for a filesystem failure
     outcome: WriteOutcome | None = None  # Structured failure reason (DD §8.7)
+    requested_mode: RecoveryMode = "files"
+    evidence_class: RecoveryEvidence | None = None
+    terminal_outcome: RecoveryTerminalOutcome | None = None
+    resumable: bool = True
 
     @property
     def error(self) -> str | None:
@@ -151,6 +156,43 @@ def _resolve_library_path(
     return library_path, library
 
 
+def _replacement_input(song: Song, library_path: LibraryPath) -> SongReplacementInput:
+    """Build a replacement snapshot from current filesystem facts and metadata."""
+    import os
+
+    from nomarr.components.library.metadata_extraction_comp import extract_metadata
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongReplacementInput, SongScanUpdate
+
+    metadata = extract_metadata(library_path)
+    stat_result = os.stat(library_path.absolute)
+    duration = metadata.get("duration")
+    return SongReplacementInput(
+        path=song.path,
+        scan=SongScanUpdate(
+            normalized_path=song.normalized_path,
+            file_size=stat_result.st_size,
+            modified_time=int(stat_result.st_mtime * 1000),
+            duration_seconds=float(duration) if duration is not None else None,
+        ),
+    )
+
+
+def _refresh_input(library_path: LibraryPath):
+    from nomarr.components.library.metadata_extraction_comp import extract_metadata
+    from nomarr.components.metadata.entity_seeding_comp import extract_entity_tag_mapping
+    from nomarr.components.metadata.metadata_cache_comp import compute_metadata_cache_fields
+    from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
+    from nomarr.helpers.dto.hydration_dto import HydrateSongInput
+
+    metadata = extract_metadata(library_path)
+    return HydrateSongInput(
+        parsed_nom_tags=parse_tag_values(metadata.get("nom_tags", {})),
+        entity_tags=extract_entity_tag_mapping(metadata),
+        metadata_cache=compute_metadata_cache_fields(metadata),
+        duration_seconds=float(metadata["duration"]) if metadata.get("duration") is not None else None,
+    )
+
+
 def _release_failed_write(db: Database, file_key: SongIdentity, worker_id: str) -> None:
     """Release a failed write while leaving it in the reconciliation queue.
 
@@ -168,6 +210,7 @@ def write_file_tags_workflow(
     target_mode: str,
     has_calibration: bool,
     namespace: str = "nom",
+    requested_mode: RecoveryMode = "files",
 ) -> WriteResult:
     """Write tags from database to an audio file based on mode.
 
@@ -183,10 +226,22 @@ def write_file_tags_workflow(
             the file's projection state on success.
         target_mode: Desired write mode ("none", "minimal", "full")
         has_calibration: Whether calibration exists (affects mood tag filtering)
-        namespace: Tag namespace (default: "nom")
+        namespace: Tag namespace (default: "nom").
+        requested_mode: Recovery policy for an externally modified file:
+            ``"files"`` rebaselines and retries when the fingerprint is the
+            same; ``"database"`` refreshes the database-side baseline instead.
 
     Returns:
-        WriteResult with success status and counts
+        WriteResult with success status, counts, recovery evidence, terminal
+        outcome, and whether the file remains resumable. An externally modified
+        file is classified by fingerprint as ``same``, ``different``, or
+        ``indeterminate``; same-file recovery can end as ``rebaselined`` or
+        ``raced``, while a different fingerprint is ``replaced`` when the
+        replacement intent is available. Unresolved failures remain resumable.
+
+    Raises:
+        LibraryOperationConflict: If lifecycle admission changes while the
+            physical write is being prepared or performed.
 
     Notes:
         - "none" mode clears the namespace entirely
@@ -250,6 +305,10 @@ def write_file_tags_workflow(
                 outcome="library_unresolved",
             )
 
+        permission_guard = getattr(db.library.regions, "assert_physical_write_allowed", None)
+        if permission_guard is not None:
+            permission_guard(library)
+
         # Require known mtime to prevent writing to externally-modified files.
         # ``Song.modified_time`` is a non-optional int, so it is always present.
         expected_mtime_ms = song.modified_time
@@ -281,6 +340,78 @@ def write_file_tags_workflow(
 
         # Write tags using atomic safe write
         result = tag_writer.write_safe(library_path, tags_to_write, library_root, expected_mtime_ms)
+        evidence_class: RecoveryEvidence | None = None
+        terminal_outcome: RecoveryTerminalOutcome | None = None
+        if not result.success and result.outcome == "modified_externally":
+            import os
+
+            from nomarr.components.library.metadata_extraction_comp import compute_chromaprint_for_file
+
+            # There is exactly one bounded comparison attempt for every mtime
+            # mismatch, including when the persisted evidence is absent.
+            persisted = song.chromaprint
+            try:
+                computed = compute_chromaprint_for_file(library_path)
+                if not persisted or not computed:
+                    evidence_class = cast("RecoveryEvidence", "fingerprint_indeterminate")
+                else:
+                    evidence_class = cast(
+                        "RecoveryEvidence",
+                        "fingerprint_same" if computed == persisted else "fingerprint_different",
+                    )
+            except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+                evidence_class = cast("RecoveryEvidence", "fingerprint_indeterminate")
+            terminal_outcome = cast("RecoveryTerminalOutcome", "pending")
+            if evidence_class == "fingerprint_same" and requested_mode == "none":
+                pass
+            elif evidence_class == "fingerprint_same" and requested_mode == "files":
+                try:
+                    fresh_mtime_ms = int(os.stat(library_path.absolute).st_mtime * 1000)
+                    result = tag_writer.write_safe(library_path, tags_to_write, library_root, fresh_mtime_ms)
+                    terminal_outcome = cast("RecoveryTerminalOutcome", "rebaselined" if result.success else "raced")
+                except (OSError, ValueError):
+                    terminal_outcome = cast("RecoveryTerminalOutcome", "raced")
+            elif evidence_class == "fingerprint_same" and requested_mode == "database":
+                try:
+                    refresh_input = _refresh_input(library_path)
+                    modified_time_ms = int(os.stat(library_path.absolute).st_mtime * 1000)
+                    db.library.refresh_hydrated_song(file_key, refresh_input, modified_time_ms)
+                    terminal_outcome = cast("RecoveryTerminalOutcome", "refreshed")
+                    _release_failed_write(db, file_key, worker_id)
+                    return WriteResult(
+                        file_key=file_key,
+                        tags_written=0,
+                        tags_filtered=tags_filtered,
+                        success=True,
+                        requested_mode=requested_mode,
+                        evidence_class=evidence_class,
+                        terminal_outcome=terminal_outcome,
+                        resumable=False,
+                    )
+                except (OSError, RuntimeError, ValueError, TypeError):
+                    terminal_outcome = cast("RecoveryTerminalOutcome", "failed")
+            elif evidence_class == "fingerprint_different":
+                replacement = getattr(db.library, "replace_song_for_reimport", None)
+                if replacement is not None:
+                    try:
+                        replacement(file_key, _replacement_input(song, library_path))
+                        terminal_outcome = cast("RecoveryTerminalOutcome", "replaced")
+                    except (LookupError, OSError, RuntimeError, ValueError, TypeError):
+                        terminal_outcome = cast("RecoveryTerminalOutcome", "failed")
+                else:
+                    terminal_outcome = cast("RecoveryTerminalOutcome", "failed")
+            if terminal_outcome in {"refreshed", "replaced"}:
+                _release_failed_write(db, file_key, worker_id)
+                return WriteResult(
+                    file_key=file_key,
+                    tags_written=0,
+                    tags_filtered=tags_filtered,
+                    success=True,
+                    requested_mode=requested_mode,
+                    evidence_class=evidence_class,
+                    terminal_outcome=terminal_outcome,
+                    resumable=False,
+                )
         if not result.success:
             _release_failed_write(db, file_key, worker_id)
             return WriteResult(
@@ -290,6 +421,10 @@ def write_file_tags_workflow(
                 success=False,
                 fs_fact=result.fs_fact,
                 outcome=result.outcome,
+                requested_mode=requested_mode,
+                evidence_class=evidence_class,
+                terminal_outcome=terminal_outcome,
+                resumable=True,
             )
 
         # Sync mtime in DB so scanner skips this file on next scan
@@ -309,8 +444,15 @@ def write_file_tags_workflow(
             tags_written=len(tags_to_write) if tags_to_write is not None else 0,
             tags_filtered=tags_filtered,
             success=True,
+            requested_mode=requested_mode,
+            evidence_class=evidence_class,
+            terminal_outcome=terminal_outcome or "written",
+            resumable=False,
         )
 
+    except LibraryOperationConflict:
+        _release_failed_write(db, file_key, worker_id)
+        raise
     except Exception:
         logger.exception("[write_file_tags] Failed to write tags for locator")
         _release_failed_write(db, file_key, worker_id)

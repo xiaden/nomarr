@@ -12,8 +12,16 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import and_, delete, distinct, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
+from nomarr.helpers.constants.file_states import STATE_NOT_HYDRATED
+from nomarr.helpers.constants.pipeline_states import (
+    PIPELINE_DEFAULTS,
+    SCAN_IN_PROGRESS,
+    SCAN_STATE_FIELD,
+    WRITE_IN_PROGRESS,
+    WRITE_STATE_FIELD,
+)
 from nomarr.helpers.dto.repo_dto import PipelineStateRow, SongRow
+from nomarr.helpers.exceptions import LibraryOperationConflict
 from nomarr.persistence.database.repo_helpers import _song_row_to_dto
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.pipeline_state import PipelineState
@@ -72,6 +80,114 @@ class PipelineRepository:
                 )
                 self._session.execute(stmt)
             self._session.commit()
+
+    def admit_scan(self, library_id: int) -> dict[str, str]:
+        """Atomically admit a scan when tag writing is not active."""
+        return self._admit(library_id, operation="scan")
+
+    def admit_tag_write(self, library_id: int) -> dict[str, str]:
+        """Atomically admit tag writing when all library predicates hold."""
+        return self._admit(library_id, operation="tag_write")
+
+    def assert_hydration_allowed(self, library_id: int) -> None:
+        """Lock lifecycle state and reject hydration while writing is active."""
+        self._assert_axis_available(library_id, operation="hydration", require_clear=WRITE_STATE_FIELD)
+
+    def assert_physical_write_allowed(self, library_id: int) -> None:
+        """Lock lifecycle state and reject physical writes while scanning."""
+        self._assert_axis_available(library_id, operation="physical_write", require_clear=SCAN_STATE_FIELD)
+
+    def _assert_axis_available(self, library_id: int, *, operation: str, require_clear: str) -> None:
+        with map_persistence_exceptions(), self._session.begin_nested():
+            rows = self._session.execute(
+                select(_T.c.state_key, _T.c.state_data).where(_T.c.library_id == library_id).with_for_update()
+            ).all()
+            values = PIPELINE_DEFAULTS.copy()
+            for row in rows:
+                values[row._mapping["state_key"]] = (row._mapping["state_data"] or {}).get(
+                    "state", values[row._mapping["state_key"]]
+                )
+            blocked_value = WRITE_IN_PROGRESS if require_clear == WRITE_STATE_FIELD else SCAN_IN_PROGRESS
+            if values[require_clear] != blocked_value:
+                return
+            raise LibraryOperationConflict(
+                operation,
+                scan_state=values[SCAN_STATE_FIELD],
+                tag_write_state=values[WRITE_STATE_FIELD],
+            )
+
+    def _admit(self, library_id: int, *, operation: str) -> dict[str, str]:
+        """Evaluate and transition one lifecycle axis in a short transaction."""
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                rows = self._session.execute(
+                    select(_T.c.state_key, _T.c.state_data).where(_T.c.library_id == library_id).with_for_update()
+                ).all()
+                values = PIPELINE_DEFAULTS.copy()
+                for row in rows:
+                    values[row._mapping["state_key"]] = (row._mapping["state_data"] or {}).get(
+                        "state", values[row._mapping["state_key"]]
+                    )
+                not_hydrated_count = 0
+                if operation == "scan":
+                    allowed = values[WRITE_STATE_FIELD] != WRITE_IN_PROGRESS
+                    target_axis, target_value = SCAN_STATE_FIELD, SCAN_IN_PROGRESS
+                else:
+                    not_hydrated_count = int(
+                        self._session.execute(
+                            select(func.count(distinct(_S.c.id)))
+                            .select_from(
+                                _S.join(_SSA, _S.c.id == _SSA.c.song_id).join(_SS, _SS.c.id == _SSA.c.state_id)
+                            )
+                            .where(_S.c.library_id == library_id, _SS.c.name == STATE_NOT_HYDRATED)
+                        ).scalar()
+                        or 0
+                    )
+                    allowed = (
+                        values[SCAN_STATE_FIELD] != SCAN_IN_PROGRESS
+                        and values[WRITE_STATE_FIELD] != WRITE_IN_PROGRESS
+                        and not_hydrated_count == 0
+                    )
+                    target_axis, target_value = WRITE_STATE_FIELD, WRITE_IN_PROGRESS
+                if not allowed:
+                    raise LibraryOperationConflict(
+                        operation,
+                        scan_state=values[SCAN_STATE_FIELD],
+                        tag_write_state=values[WRITE_STATE_FIELD],
+                        not_hydrated_count=not_hydrated_count,
+                    )
+                payload = {
+                    "library_id": library_id,
+                    "state_key": target_axis,
+                    "state_data": {"state": target_value},
+                    "updated_at": int(time.time() * 1000),
+                }
+                insert_stmt = pg_insert(_T).values(**payload)
+                self._session.execute(
+                    insert_stmt.on_conflict_do_update(
+                        constraint="uq_pipeline_states_lib_key",
+                        set_={
+                            "state_data": insert_stmt.excluded["state_data"],
+                            "updated_at": insert_stmt.excluded["updated_at"],
+                        },
+                    )
+                )
+            self._session.commit()
+            return values | {target_axis: target_value}
+
+    def count_songs_in_state(self, library_id: int, state: str) -> int:
+        """Count songs in one state for a library inside persistence."""
+        stmt = (
+            select(func.count(distinct(_S.c.id)))
+            .select_from(
+                _S.join(_L, _S.c.library_id == _L.c.id)
+                .join(_SSA, _S.c.id == _SSA.c.song_id)
+                .join(_SS, _SS.c.id == _SSA.c.state_id)
+            )
+            .where(_S.c.library_id == library_id, _SS.c.name == state)
+        )
+        with map_persistence_exceptions():
+            return int(self._session.execute(stmt).scalar() or 0)
 
     def get_state(self, library_id: int, state_key: str) -> PipelineStateRow | None:
         """Fetch a pipeline state by ``(library_id, state_key)``."""
