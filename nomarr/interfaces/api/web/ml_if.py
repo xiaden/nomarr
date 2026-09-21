@@ -173,22 +173,25 @@ async def ml_trigger_vram_probe(
         ) from e
 
 
-@router.get(
-    "/work-status",
-    dependencies=[Depends(verify_session)],
-)
+@router.get("/work-status", dependencies=[Depends(verify_session)])
 async def web_work_status(
     library_service: Annotated[LibraryService, Depends(get_library_service)],
     tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
 ) -> WorkStatusResponse:
     """Get unified work status for the system.
 
-    Returns status of:
-    - Scanning: Any library currently being scanned
-    - Processing: ML inference on audio files (pending/processed counts)
+    The response includes scanning and ML-processing totals plus a
+    ``pipeline_libraries`` projection for each library. Each projection
+    exposes scan, hydration, and tag-write state together with recovery
+    metadata: ``requested_mode``, ``selected_run_counts`` for the selected
+    write run (not global pending work), ``outcome``, ``evidence_class``,
+    ``resumable``, ``recovery_action``, and the machine-readable
+    ``message_code``. These fields allow clients to distinguish active,
+    completed, partial, cancelled, failed, or otherwise recoverable write
+    outcomes without inferring them from the compatibility state fields.
 
-    This endpoint is designed for frontend polling to show activity indicators.
-    Poll at 1s intervals when busy, 30s when idle.
+    This endpoint is designed for frontend polling to show activity and
+    recovery status. Poll at 1s intervals when busy, 30s when idle.
     """
     try:
         result = await asyncio.to_thread(library_service.get_work_status, tagging_service=tagging_service)

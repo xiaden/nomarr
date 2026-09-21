@@ -69,7 +69,7 @@ class LibraryScanMixin:
         scan_setup_workflow(self.db, library, scan_type="quick")
         task_id = library_task_id(library, "scan")
 
-        def on_complete():
+        def on_complete(_result: Any = None) -> None:
             on_scan_complete_pipeline_hook(self.db, library)
 
         if self.background_tasks is None:
@@ -143,10 +143,10 @@ class LibraryScanMixin:
         # tags, not to trigger a new ML pass.  The skip_validation_autorepair flag
         # already suppresses tag-validation repair; we also suppress the pipeline hook
         # so the ML axis stays at whichever state it was already in.
-        on_complete: Callable[[], None] | None = None
+        on_complete: Callable[[Any], None] | None = None
         if not skip_validation_autorepair:
 
-            def on_complete():
+            def on_complete(_result: Any = None) -> None:
                 on_scan_complete_pipeline_hook(self.db, library)
 
         if self.background_tasks is None:

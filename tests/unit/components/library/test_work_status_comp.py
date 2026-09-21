@@ -323,6 +323,41 @@ class TestWriteOutcomes:
         assert result.pipeline_libraries[0].write_outcome is None
 
     @pytest.mark.unit
+    def test_write_statuses_project_all_normalized_fields(self) -> None:
+        """Populated reconcile status is projected onto the pipeline DTO."""
+        libraries = [_make_library(name="Rock Library", library_auto_write=False)]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=10, needs_tagging=0),
+            recently_tagged_count=0,
+            pipeline_states={"Rock Library": _make_pipeline_state()},
+            write_statuses={
+                "Rock Library": {
+                    "requested_mode": "files",
+                    "selected_run_counts": {"selected": 3, "processed": 2, "remaining": 1},
+                    "outcome": "partial",
+                    "evidence_class": "fingerprint_different",
+                    "resumable": True,
+                    "recovery_action": "manual_reconciliation",
+                    "message_code": "modified_external",
+                    "hydration_state": "hydrated",
+                    "hydration_count": 7,
+                },
+            },
+        )
+
+        pipeline = result.pipeline_libraries[0]
+        assert pipeline.requested_mode == "files"
+        assert pipeline.selected_run_counts == {"selected": 3, "processed": 2, "remaining": 1}
+        assert pipeline.outcome == "partial"
+        assert pipeline.evidence_class == "fingerprint_different"
+        assert pipeline.resumable is True
+        assert pipeline.recovery_action == "manual_reconciliation"
+        assert pipeline.message_code == "modified_external"
+        assert pipeline.hydration_state == "hydrated"
+        assert pipeline.hydration_count == 7
+
+    @pytest.mark.unit
     def test_write_outcomes_keyed_by_name_does_not_leak_other_libraries(self) -> None:
         """A mapping entry for another library does not leak onto this one."""
         libraries = [_make_library(name="Rock Library", library_auto_write=False)]

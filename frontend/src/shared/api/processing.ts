@@ -24,7 +24,7 @@ export interface ScanningLibrary {
  */
 export type RecoveryOutcome =
   | "active" | "written" | "partial" | "not_written" | "cancelled" | "conflict"
-  | "indeterminate" | "raced" | "failed" | "replacement" | "deferred" | "unavailable";
+  | "indeterminate" | "raced" | "failed" | "replacement" | "deferred" | "unavailable" | "evicted";
 export type RecoveryEvidence = "fingerprint_same" | "fingerprint_different" | "fingerprint_indeterminate";
 
 export interface PipelineLibrary {

@@ -49,13 +49,50 @@ class TestBackgroundTaskService:
             assert task_started.wait(timeout=1.0)
 
             status = background_task_service.get_task_status(task_id)
-            assert status == {"status": "running", "result": None, "error": None}
+            assert status == {"status": "running", "result": None, "error": None, "requested_mode": None}
         finally:
             allow_finish.set()
             _join_thread(thread)
 
         status = background_task_service.get_task_status(task_id)
-        assert status == {"status": "complete", "result": "done", "error": None}
+        assert status == {"status": "complete", "result": "done", "error": None, "requested_mode": None}
+
+    def test_requested_mode_is_exposed_for_running_and_completed_task(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """A selected recovery mode remains visible across task lifecycle states."""
+        task_started = threading.Event()
+        allow_finish = threading.Event()
+
+        def task_fn() -> str:
+            task_started.set()
+            allow_finish.wait(timeout=1.0)
+            return "done"
+
+        task_id = background_task_service.start_task(
+            ManagedTask(task_id="mode-task", fn=task_fn, requested_mode="files")
+        )
+        thread = background_task_service._tasks[task_id][0]
+
+        try:
+            assert task_started.wait(timeout=1.0)
+            assert background_task_service.get_task_status(task_id) == {
+                "status": "running",
+                "result": None,
+                "error": None,
+                "requested_mode": "files",
+            }
+        finally:
+            allow_finish.set()
+            _join_thread(thread)
+
+        assert background_task_service.get_task_status(task_id) == {
+            "status": "complete",
+            "result": "done",
+            "error": None,
+            "requested_mode": "files",
+        }
 
     def test_start_task_raises_for_duplicate_running_task_id(
         self,
@@ -156,7 +193,7 @@ class TestBackgroundTaskService:
             stop_event.set()
 
         status = background_task_service.get_task_status(task_id)
-        assert status == {"status": "complete", "result": "stopped", "error": None}
+        assert status == {"status": "complete", "result": "stopped", "error": None, "requested_mode": None}
 
     def test_cancel_and_join_returns_true_for_unknown_task(
         self,
@@ -200,7 +237,7 @@ class TestBackgroundTaskService:
         callback_called = threading.Event()
         task_id = "callback-success"
 
-        def on_complete() -> None:
+        def on_complete(_result: object) -> None:
             status = background_task_service.get_task_status(task_id)
             assert status is not None
             callback_statuses.append(str(status["status"]))
@@ -221,7 +258,7 @@ class TestBackgroundTaskService:
         # observes the still-"running" status.
         assert callback_statuses == ["running"]
         status = background_task_service.get_task_status(task_id)
-        assert status == {"status": "complete", "result": "done", "error": None}
+        assert status == {"status": "complete", "result": "done", "error": None, "requested_mode": None}
 
     def test_on_complete_callback_errors_mark_task_error(
         self,
@@ -230,7 +267,7 @@ class TestBackgroundTaskService:
         """A task whose on_complete raises must not be reported complete."""
         task_id = "callback-raises"
 
-        def on_complete() -> None:
+        def on_complete(_result: object) -> None:
             raise RuntimeError("cb_boom")
 
         managed_task = ManagedTask(
@@ -248,6 +285,7 @@ class TestBackgroundTaskService:
         assert status["status"] == "error"
         assert status["result"] == "done"
         assert status["error"] == "on_complete failed: cb_boom"
+        assert status["requested_mode"] is None
 
     def test_task_cancelled_records_cancelled_status_and_skips_on_complete(
         self,
@@ -271,7 +309,7 @@ class TestBackgroundTaskService:
 
         assert callback_calls == []
         status = background_task_service.get_task_status(task_id)
-        assert status == {"status": "cancelled", "result": {"partial": 1}, "error": None}
+        assert status == {"status": "cancelled", "result": {"partial": 1}, "error": None, "requested_mode": None}
 
     def test_cancel_task_produces_cancelled_terminal_status(
         self,
@@ -299,7 +337,7 @@ class TestBackgroundTaskService:
             stop_event.set()
 
         status = background_task_service.get_task_status(task_id)
-        assert status == {"status": "cancelled", "result": None, "error": None}
+        assert status == {"status": "cancelled", "result": None, "error": None, "requested_mode": None}
 
     @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
     def test_on_complete_does_not_fire_when_task_errors(
@@ -325,7 +363,7 @@ class TestBackgroundTaskService:
 
         assert callback_calls == []
         status = background_task_service.get_task_status(task_id)
-        assert status == {"status": "error", "result": None, "error": "boom"}
+        assert status == {"status": "error", "result": None, "error": "boom", "requested_mode": None}
 
     def test_task_order_keeps_single_entry_after_repeated_start_complete_cycles(
         self,
@@ -346,7 +384,7 @@ class TestBackgroundTaskService:
 
             assert background_task_service.list_tasks().count(task_id) == 1
             status = background_task_service.get_task_status(task_id)
-            assert status == {"status": "complete", "result": cycle, "error": None}
+            assert status == {"status": "complete", "result": cycle, "error": None, "requested_mode": None}
 
         assert background_task_service._task_order == [task_id]
 
@@ -422,6 +460,7 @@ class TestCleanupCompletedTasks:
             "status": "complete",
             "result": task_ids[2],
             "error": None,
+            "requested_mode": None,
         }
 
     def test_skips_running_tasks_and_cleans_completed_ones(
@@ -460,6 +499,7 @@ class TestCleanupCompletedTasks:
                 "status": "running",
                 "result": None,
                 "error": None,
+                "requested_mode": None,
             }
             assert background_task_service.get_task_status(completed_task_id) is None
         finally:

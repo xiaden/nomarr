@@ -244,7 +244,7 @@ class CalibrationService:
 
         """
 
-        def guarded_hook() -> None:
+        def guarded_hook(_result: Any = None) -> None:
             result = self._generation_result
             if result is None:
                 logger.warning("[CalibrationService] Post-generation hook skipped: no generation result available")
@@ -320,7 +320,7 @@ class CalibrationService:
         task = ManagedTask(
             task_id=CALIBRATION_GENERATE_TASK_ID,
             fn=self._run_histogram_generation,
-            on_complete=self._post_generation_hook,
+            on_complete=(lambda _result: self._post_generation_hook() if self._post_generation_hook else None),
             daemon=False,
         )
         try:

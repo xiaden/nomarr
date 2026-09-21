@@ -117,8 +117,6 @@ class TestStartWriteTagsBackground:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    @pytest.mark.unit
-    @pytest.mark.mocked
     def test_start_write_tags_background_propagates_requested_mode(self) -> None:
         """The normalized mode reaches the admitted batch seam."""
         mock_bts = MagicMock()
@@ -198,12 +196,13 @@ class TestStartWriteTagsBackground:
                 0.0,
             ),
         ):
-            service.start_write_tags_background(_make_library(), threading.Event())
+            service.start_write_tags_background(_make_library(), threading.Event(), requested_mode="files")
 
             managed_task = mock_bts.start_task.call_args.args[0]
             managed_task.fn()
 
             assert mock_write_tags.call_count == 3
+            assert all(call.kwargs["requested_mode"] == "files" for call in mock_write_tags.call_args_list)
 
 
 class TestGetReconcileStatus:
@@ -231,10 +230,96 @@ class TestGetReconcileStatus:
         assert result["in_progress"] is True
         assert result["outcome"] == "active"
         assert result["message_code"] == "TAG_WRITE_ACTIVE"
-        assert result["requested_mode"] is None
+        assert result["requested_mode"] == "none"
         assert result["resumable"] is True
         assert result["recovery_action"] == "retry"
         mock_bts.get_task_status.assert_called_once_with("write_tags:lib1")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_reconcile_status_preserves_requested_mode_from_result(self) -> None:
+        """Terminal status carries the selected recovery mode through the boundary."""
+        mock_db = MagicMock()
+        mock_bts = MagicMock()
+        mock_bts.get_task_status.return_value = {
+            "status": "complete",
+            "result": WriteTagsResult(processed=1, remaining=0, failed=0, outcome="complete", requested_mode="files"),
+        }
+        service = _make_service(db=mock_db, bts=mock_bts)
+
+        with patch(
+            "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+            return_value=0,
+        ):
+            result = service.get_reconcile_status(_make_library())
+
+        assert result["outcome"] == "written"
+        assert result["requested_mode"] == "files"
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_reconcile_status_preserves_typed_terminal_status_facts(self) -> None:
+        """Existing producer facts override conservative compatibility defaults."""
+        mock_db = MagicMock()
+        mock_bts = MagicMock()
+        mock_bts.get_task_status.return_value = {
+            "status": "complete",
+            "requested_mode": "database",
+            "outcome": "replacement",
+            "selected_run_counts": {"selected": 2, "remaining": 1, "unavailable": 1},
+            "evidence_class": "fingerprint_different",
+            "resumable": True,
+            "recovery_action": "replacement_reimport_requeue",
+            "message_code": "TAG_WRITE_REPLACEMENT",
+            "result": WriteTagsResult(processed=1, remaining=1, failed=0, outcome="partial"),
+        }
+        service = _make_service(db=mock_db, bts=mock_bts)
+
+        with patch(
+            "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+            return_value=1,
+        ):
+            result = service.get_reconcile_status(_make_library())
+
+        assert result["requested_mode"] == "database"
+        assert result["outcome"] == "replacement"
+        assert result["selected_run_counts"] == {"selected": 2, "remaining": 1, "unavailable": 1}
+        assert result["evidence_class"] == "fingerprint_different"
+        assert result["recovery_action"] == "replacement_reimport_requeue"
+        assert result["message_code"] == "TAG_WRITE_REPLACEMENT"
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_reconcile_status_projects_evicted_terminal_status(self) -> None:
+        """Evicted BTS facts remain visible in the normalized API status."""
+        mock_db = MagicMock()
+        mock_bts = MagicMock()
+        mock_bts.get_task_status.return_value = {
+            "status": "complete",
+            "requested_mode": "files",
+            "outcome": "evicted",
+            "selected_run_counts": {"selected": 3, "processed": 2, "remaining": 1},
+            "evidence_class": "result_evicted",
+            "resumable": True,
+            "recovery_action": "refresh_status",
+            "message_code": "TAG_WRITE_RESULT_EVICTED",
+            "result": WriteTagsResult(processed=2, remaining=1, failed=0, outcome="partial"),
+        }
+        service = _make_service(db=mock_db, bts=mock_bts)
+
+        with patch(
+            "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+            return_value=1,
+        ):
+            result = service.get_reconcile_status(_make_library())
+
+        assert result["outcome"] == "evicted"
+        assert result["requested_mode"] == "files"
+        assert result["selected_run_counts"] == {"selected": 3, "processed": 2, "remaining": 1}
+        assert result["evidence_class"] == "result_evicted"
+        assert result["resumable"] is True
+        assert result["recovery_action"] == "refresh_status"
+        assert result["message_code"] == "TAG_WRITE_RESULT_EVICTED"
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -284,6 +369,7 @@ class TestGetReconcileStatus:
         assert result["outcome"] == "partial"
         assert result["message_code"] == "TAG_WRITE_PARTIAL"
         assert result["selected_run_counts"] == {"processed": 1, "failed": 2, "remaining": 2}
+        assert result["requested_mode"] == "none"
         assert result["resumable"] is True
 
     @pytest.mark.unit
@@ -346,9 +432,11 @@ class TestGetReconcileStatus:
         assert result["outcome"] == "written"
         assert result["message_code"] == "TAG_WRITE_COMPLETE"
         assert result["selected_run_counts"] == {"processed": 2, "failed": 0, "remaining": 0}
+        assert result["requested_mode"] == "none"
         assert result["resumable"] is False
         assert result["recovery_action"] == "none"
         assert result["failed_count"] == 0
+        assert result["requested_mode"] == "none"
 
 
 class TestWriteTagsToFiles:

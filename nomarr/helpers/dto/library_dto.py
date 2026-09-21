@@ -258,6 +258,7 @@ class WriteTagsResult:
     remaining: int  # Files still pending tag write
     failed: int  # Files that failed during this batch
     outcome: Literal["complete", "partial"] = "partial"  # Conservative default; drained path sets "complete"
+    requested_mode: Literal["none", "files", "database"] = "none"
 
 
 @dataclass

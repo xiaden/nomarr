@@ -78,6 +78,7 @@ class BackgroundTaskService:
                         "status": "cancelled",
                         "result": cancelled.result,
                         "error": None,
+                        "requested_mode": task.requested_mode,
                     }
                 return
             except Exception as e:
@@ -87,6 +88,7 @@ class BackgroundTaskService:
                         "status": "error",
                         "result": None,
                         "error": str(e),
+                        "requested_mode": task.requested_mode,
                     }
                 # Re-raise to crash container (loud failure for alpha)
                 raise
@@ -96,7 +98,7 @@ class BackgroundTaskService:
             # publish a false "complete" terminal state.
             if task.on_complete is not None:
                 try:
-                    task.on_complete()
+                    task.on_complete(result)
                 except Exception as e:
                     logger.error("Task %s completion callback failed: %s", task_id, e, exc_info=True)
                     with self._lock:
@@ -104,6 +106,7 @@ class BackgroundTaskService:
                             "status": "error",
                             "result": result,
                             "error": f"on_complete failed: {e}",
+                            "requested_mode": task.requested_mode,
                         }
                     return
 
@@ -112,6 +115,7 @@ class BackgroundTaskService:
                     "status": "complete",
                     "result": result,
                     "error": None,
+                    "requested_mode": task.requested_mode,
                 }
 
         thread = threading.Thread(target=wrapper)
@@ -127,6 +131,7 @@ class BackgroundTaskService:
                 "status": "running",
                 "result": None,
                 "error": None,
+                "requested_mode": task.requested_mode,
             }
             if task_id in self._task_order:
                 self._task_order.remove(task_id)

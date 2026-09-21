@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
-from nomarr.helpers.dto.library_dto import StartScanResult
+from nomarr.helpers.dto.library_dto import StartScanResult, WriteTagsResult
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryOperationConflict
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import (
@@ -513,9 +513,9 @@ class TestLibraryWriteTag:
 
         assert response.status_code == 202
         on_complete = mock_tagging_service.start_write_tags_background.call_args.kwargs["on_complete"]
-        on_complete()
+        on_complete(WriteTagsResult(processed=0, remaining=4, failed=4, outcome="partial"))
 
-        mock_tagging_service.get_reconcile_status.assert_called_once_with(library)
+        mock_tagging_service.get_reconcile_status.assert_not_called()
         mock_navidrome_service.trigger_rescan.assert_not_called()
 
     def test_write_tag_rescan_fires_when_drained(
@@ -540,7 +540,7 @@ class TestLibraryWriteTag:
 
         assert response.status_code == 202
         on_complete = mock_tagging_service.start_write_tags_background.call_args.kwargs["on_complete"]
-        on_complete()
+        on_complete(WriteTagsResult(processed=1, remaining=0, failed=0, outcome="complete"))
 
         mock_navidrome_service.trigger_rescan.assert_called_once()
 

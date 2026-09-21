@@ -97,9 +97,40 @@ When this happens:
 
 To resume, start another file writeback run for the library. Nomarr attempts to write each pending file at most 3 times per run, and a new run starts with a fresh retry budget, so files still pending after one run are picked up again on the next.
 
-A scan or write request can also be rejected with HTTP `409 Conflict` while another lifecycle operation owns the library. The response detail includes the operation and the authoritative `scan_state`, `tag_write_state`, and `not_hydrated` count. Do not treat this as a permanent failure: wait for the active scan/write or hydration work to finish, then retry. Automatic watchers and pipeline workers apply the same rule by deferring work so it remains resumable.
+A scan or write request can also be rejected with HTTP `409 Conflict` while another lifecycle operation owns the library. The response detail includes `code`, `operation`, `scan_state`, `tag_write_state`, and `not_hydrated_count`. Do not treat this as a permanent failure: wait for the active scan/write or hydration work to finish, then retry. Automatic watchers and pipeline workers apply the same rule by deferring work so it remains resumable.
 
 When a pending file was changed outside Nomarr, the write result records recovery evidence and a terminal outcome. Nomarr compares the current file fingerprint with the persisted fingerprint: a matching fingerprint may be rebaselined and retried in `files` mode, or refreshed in `database` mode; a different fingerprint is replaced for re-import when that recovery intent is available. A race during the retry remains pending and resumable. Review the recovery outcome before retrying a file that is still pending.
+
+## Starting file writeback through the API
+
+The authenticated `POST /api/web/library/{library_name}/write-tag` endpoint starts a background write and returns HTTP `202 Accepted` immediately. Send an optional JSON object with one field, `overwrite`:
+
+- `none` (default): use the normal write path; do not apply a recovery override to an externally modified file.
+- `files`: when the external file has the same content fingerprint as the stored file, rebaseline it and retry writing the curated database tags.
+- `database`: when the fingerprint is the same, refresh Nomarr's database-side metadata from the file instead of writing tags back to it.
+
+The request object is strict: `overwrite` is the only accepted field, and its value must be one of `none`, `files`, or `database`. An omitted request body has the same effect as `{"overwrite":"none"}`. The response includes `status`, a background `task_id`, the normalized `requested_mode`, and an initial `outcome` (normally `active`):
+
+```json
+{
+  "status": "started",
+  "task_id": "<background-task-id>",
+  "requested_mode": "files",
+  "outcome": "active"
+}
+```
+
+## Reading work status and recovery fields
+
+`GET /api/web/machine-learning/work-status` returns overall activity plus a `pipeline_libraries` entry for each library. The top-level fields (`is_scanning`, `is_processing`, `is_busy`, pending/processed/total file counts, and processing velocity) support polling. Each library entry includes these lifecycle and recovery fields:
+
+- `scan_state`, `hydration_state`, `hydration_count`, and `tag_write_state` show scan, hydration, and tag-write progress; `state` remains the compatibility pipeline-state key.
+- `requested_mode` records the selected recovery policy (`none`, `files`, or `database`), while `selected_run_counts` contains counts for the selected write run rather than global pending work.
+- `outcome` describes the write lifecycle. Values include `active`, `written`, `partial`, `not_written`, `cancelled`, `conflict`, `indeterminate`, `raced`, `failed`, `replacement`, `deferred`, `unavailable`, and `evicted`.
+- `evidence_class` explains external-change evidence: `fingerprint_same`, `fingerprint_different`, or `fingerprint_indeterminate`.
+- `resumable` says whether pending work can be attempted again. `recovery_action` identifies the next handling (`none`, `manual_reconciliation`, `retry`, `adopt_database_metadata`, `project_database_to_files`, `replacement_reimport_requeue`, `deferred_retry`, or `refresh_status`). `message_code` is a machine-readable explanation code; clients should display it alongside the human-facing status rather than infer meaning from the legacy `write_outcome` field.
+
+These fields are optional while no write run has produced recovery information. Poll until `is_busy` is false, then use `outcome`, `resumable`, and `recovery_action` to decide whether to retry or review the pending files.
 
 ## What to expect in practice
 

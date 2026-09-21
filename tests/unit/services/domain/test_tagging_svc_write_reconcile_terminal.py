@@ -296,7 +296,7 @@ class TestTerminalDrive:
 
         with _boundary(workflow=_workflow_failing(outcome="write_failed"), claim=_claim, count=_count):
             stop_event, task_id, thread = _start(
-                service, bts, library, on_complete=lambda: on_complete_calls.append("called")
+                service, bts, library, on_complete=lambda _result: on_complete_calls.append("called")
             )
             try:
                 thread.join(timeout=_TERMINAL_JOIN_TIMEOUT_S)

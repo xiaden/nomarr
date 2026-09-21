@@ -74,7 +74,7 @@ class TestScanDispatch:
             assert managed_task.task_id == expected_task_id
             assert cast("functools.partial", managed_task.fn).keywords["stop_event"] is managed_task.stop_event
             assert managed_task.on_complete is not None
-            managed_task.on_complete()
+            managed_task.on_complete(None)
             mock_on_complete_hook.assert_called_once_with(service.db, library)
         assert result.job_ids == [expected_task_id]
 
@@ -102,7 +102,7 @@ class TestScanDispatch:
             assert managed_task.task_id == expected_task_id
             assert cast("functools.partial", managed_task.fn).keywords["stop_event"] is managed_task.stop_event
             assert managed_task.on_complete is not None
-            managed_task.on_complete()
+            managed_task.on_complete(None)
             mock_on_complete_hook.assert_called_once_with(service.db, library)
         assert result.job_ids == [expected_task_id]
 

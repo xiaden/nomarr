@@ -234,11 +234,17 @@ export function DashboardPage() {
             ) : (
               <Stack spacing={1.25}>
                 {pipelineLibraries.map((library) => {
-                   const isPartialWrite = library.outcome === "partial" || library.outcome === "not_written" || library.write_outcome === "partial";
-                  const needsCalibration =
-                    library.state === "awaiting_calibration" || library.state === "cal_ready";
-                     const needsAttention =
-                     needsCalibration || isPartialWrite || library.state === "write_ready" || Boolean(library.outcome && library.outcome !== "written");
+                    const isPartialWrite =
+                      library.outcome === "partial" ||
+                      library.outcome === "not_written" ||
+                      library.write_outcome === "partial";
+                    const needsCalibration =
+                      library.state === "awaiting_calibration" || library.state === "cal_ready";
+                    const needsAttention =
+                      needsCalibration ||
+                      isPartialWrite ||
+                      library.state === "write_ready" ||
+                      Boolean(library.outcome && library.outcome !== "written");
 
                   return needsAttention ? (
                     <Alert
@@ -268,6 +274,12 @@ export function DashboardPage() {
                               ? "Replacement audio requires reimport and downstream ML processing."
                               : library.outcome === "deferred"
                               ? "Watcher work was deferred for retry."
+                              : library.outcome === "conflict"
+                              ? "This library has a lifecycle conflict; retry after the active operation completes."
+                              : library.outcome === "unavailable"
+                              ? "The selected run result is unavailable; refresh status before retrying."
+                              : library.outcome === "evicted"
+                              ? "The selected run result was evicted; refresh status before retrying."
                               : isPartialWrite
                               ? "Tag write ended with files still pending."
                               : "Ready for file writeback review."}

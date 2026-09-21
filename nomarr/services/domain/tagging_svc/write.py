@@ -242,13 +242,14 @@ class TaggingWriteMixin:
             remaining=remaining,
             failed=failed,
             outcome="complete" if remaining == 0 else "partial",
+            requested_mode=requested_mode,
         )
 
     def start_write_tags_background(
         self,
         library: Library,
         stop_event: threading.Event,
-        on_complete: Callable[[], None] | None = None,
+        on_complete: Callable[[WriteTagsResult], None] | None = None,
         *,
         admitted: bool = False,
         requested_mode: Literal["none", "files", "database"] = "none",
@@ -276,9 +277,15 @@ class TaggingWriteMixin:
             library: Domain ``Library`` (natural identity) to write.
             stop_event: Cooperative cancellation event. The background loop exits
                 when this event is set.
-            on_complete: Optional callback invoked only after the loop terminates
-                without outstanding eligible work (full drain or partial terminal).
-                It is skipped on cancellation.
+            on_complete: Optional callback invoked with the completed
+                ``WriteTagsResult`` after the loop terminates without outstanding
+                eligible work. It runs for both full-drain completion and partial
+                terminal completion, and is skipped on cancellation.
+            admitted: Whether the caller has already completed tag-write admission.
+            requested_mode: Recovery mode for the run. ``"none"`` uses the normal
+                write path, ``"files"`` permits same-fingerprint file rebaselining
+                and retry, and ``"database"`` refreshes database metadata from a
+                same-fingerprint external file.
 
         Returns:
             Task ID string in the form ``"write_tags:{library.name}"`` returned by
@@ -296,7 +303,7 @@ class TaggingWriteMixin:
         def _task() -> WriteTagsResult:
             exclude: set[SongIdentity] = set()
             retry_counts: dict[SongIdentity, int] = {}
-            last_result = WriteTagsResult(processed=0, remaining=0, failed=0)
+            last_result = WriteTagsResult(processed=0, remaining=0, failed=0, requested_mode=requested_mode)
             while not stop_event.is_set():
                 result = self._write_admitted_tags_to_files(
                     library,
@@ -326,6 +333,7 @@ class TaggingWriteMixin:
                 fn=_task,
                 stop_event=stop_event,
                 on_complete=on_complete,
+                requested_mode=requested_mode,
                 daemon=True,
             ),
         )
@@ -359,35 +367,103 @@ class TaggingWriteMixin:
         task_status = self._bts.get_task_status(write_tags_task_id(library))
         in_progress = task_status is not None and task_status["status"] == "running"
         task_result = task_status.get("result") if task_status is not None else None
+        task_error = task_status.get("error") if task_status is not None else None
         failed_count = task_result.failed if isinstance(task_result, WriteTagsResult) else 0
+        requested_mode = (
+            task_status.get("requested_mode", task_result.requested_mode)
+            if task_status is not None and isinstance(task_result, WriteTagsResult)
+            else task_result.requested_mode
+            if isinstance(task_result, WriteTagsResult)
+            else task_status.get("requested_mode", "none")
+            if task_status is not None
+            else "none"
+        )
+        selected_run_counts = (
+            {
+                "processed": task_result.processed,
+                "failed": task_result.failed,
+                "remaining": task_result.remaining,
+            }
+            if isinstance(task_result, WriteTagsResult)
+            else None
+        )
 
+        task_state = task_status.get("status") if task_status is not None else None
+        supplied_outcome = task_status.get("outcome") if task_status is not None else None
+        supplied_counts = task_status.get("selected_run_counts") if task_status is not None else None
+        supplied_evidence = task_status.get("evidence_class") if task_status is not None else None
+        supplied_resumable = task_status.get("resumable") if task_status is not None else None
+        supplied_action = task_status.get("recovery_action") if task_status is not None else None
+        supplied_message = task_status.get("message_code") if task_status is not None else None
+        if isinstance(supplied_counts, dict):
+            selected_run_counts = supplied_counts
         if in_progress:
             outcome = "active"
             message_code = "TAG_WRITE_ACTIVE"
+            resumable = True
+            recovery_action = "retry"
+        elif task_state == "cancelled":
+            outcome = "cancelled"
+            message_code = "TAG_WRITE_CANCELLED"
+            resumable = True
+            recovery_action = "retry"
+            if isinstance(selected_run_counts, dict):
+                selected_run_counts["cancelled"] = 1
+        elif task_state == "error":
+            outcome = "failed"
+            message_code = "TAG_WRITE_FAILED"
+            resumable = True
+            recovery_action = "retry"
         elif isinstance(task_result, WriteTagsResult):
             # BTS completion is not success authority: only an explicit zero
             # remaining count is a full drain (ADR-051).
             outcome = "written" if task_result.outcome == "complete" and task_result.remaining == 0 else "partial"
             message_code = "TAG_WRITE_COMPLETE" if outcome == "written" else "TAG_WRITE_PARTIAL"
+            resumable = outcome != "written"
+            recovery_action = "none" if outcome == "written" else "retry"
         elif pending_count > 0:
             outcome = "not_written"
             message_code = "TAG_WRITE_PENDING"
+            resumable = True
+            recovery_action = "retry"
         else:
             outcome = "unavailable"
             message_code = "TAG_WRITE_STATUS_UNAVAILABLE"
+            resumable = False
+            recovery_action = "refresh_status"
+
+        evidence_class: str | None = None
+        if supplied_outcome in {
+            "cancelled",
+            "conflict",
+            "indeterminate",
+            "raced",
+            "failed",
+            "replacement",
+            "deferred",
+            "unavailable",
+            "evicted",
+        }:
+            outcome = supplied_outcome
+        if isinstance(supplied_evidence, str):
+            evidence_class = supplied_evidence
+        if isinstance(supplied_resumable, bool):
+            resumable = supplied_resumable
+        if isinstance(supplied_action, str):
+            recovery_action = supplied_action
+        if isinstance(supplied_message, str):
+            message_code = supplied_message
 
         return {
             "pending_count": pending_count,
             "failed_count": failed_count,
             "in_progress": in_progress,
             "outcome": outcome,
-            "requested_mode": None,
-            "selected_run_counts": (
-                {"processed": task_result.processed, "failed": task_result.failed, "remaining": task_result.remaining}
-                if isinstance(task_result, WriteTagsResult)
-                else None
-            ),
-            "resumable": outcome not in {"written", "unavailable"},
-            "recovery_action": "none" if outcome == "written" else "retry",
+            "requested_mode": requested_mode,
+            "selected_run_counts": selected_run_counts,
+            "resumable": resumable,
+            "recovery_action": recovery_action,
             "message_code": message_code,
+            "evidence_class": evidence_class,
+            "error": task_error,
         }

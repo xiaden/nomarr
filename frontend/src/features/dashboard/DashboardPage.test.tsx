@@ -80,6 +80,24 @@ describe("DashboardPage", () => {
     expect(screen.getByText("No destructive recovery occurred; manual recovery is available.")).toBeInTheDocument();
   });
 
+  it("renders explicit conflict, unavailable, and evicted recovery messages", async () => {
+    vi.mocked(getWorkStatus).mockResolvedValue({
+      ...workStatus,
+      pipeline_libraries: [
+        { library_id: "library-1", name: "Conflict Library", state: "write_ready", library_auto_write: false, outcome: "conflict" },
+        { library_id: "library-2", name: "Unavailable Library", state: "write_ready", library_auto_write: false, outcome: "unavailable" },
+        { library_id: "library-3", name: "Evicted Library", state: "write_ready", library_auto_write: false, outcome: "evicted" },
+      ],
+    });
+
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => expect(screen.getByText("Conflict Library")).toBeInTheDocument());
+    expect(screen.getByText("This library has a lifecycle conflict; retry after the active operation completes.")).toBeInTheDocument();
+    expect(screen.getByText("The selected run result is unavailable; refresh status before retrying.")).toBeInTheDocument();
+    expect(screen.getByText("The selected run result was evicted; refresh status before retrying.")).toBeInTheDocument();
+  });
+
   it("distinguishes a partial tag write from a drained library", async () => {
     vi.mocked(getWorkStatus).mockResolvedValue({
       ...workStatus,

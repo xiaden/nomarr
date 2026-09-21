@@ -548,8 +548,8 @@ class TestGetWorkStatusWriteOutcome:
         )
 
     @pytest.mark.unit
-    def test_get_work_status_forwards_write_outcome(self) -> None:
-        """Real compute_work_status projects the reconcile outcome forwarded from the service."""
+    def test_get_work_status_forwards_write_status(self) -> None:
+        """Real compute_work_status projects normalized reconcile status forwarded by the service."""
         mock_db = MagicMock()
         mock_db.app.get_file_query_stats = MagicMock(return_value={})
         mock_db.library.count_recently_tagged = MagicMock(return_value=0)
@@ -561,6 +561,14 @@ class TestGetWorkStatusWriteOutcome:
             "failed_count": 1,
             "in_progress": False,
             "outcome": "partial",
+            "requested_mode": "files",
+            "selected_run_counts": {"selected": 3, "processed": 2, "remaining": 1},
+            "evidence_class": "fingerprint_different",
+            "resumable": True,
+            "recovery_action": "manual_reconciliation",
+            "message_code": "modified_external",
+            "hydration_state": "hydrated",
+            "hydration_count": 7,
         }
 
         with (
@@ -581,7 +589,16 @@ class TestGetWorkStatusWriteOutcome:
             result = mixin.get_work_status(tagging_service=tagging_service)
 
         assert len(result.pipeline_libraries) == 1
-        assert result.pipeline_libraries[0].write_outcome == "partial"
+        pipeline = result.pipeline_libraries[0]
+        assert pipeline.write_outcome == "partial"
+        assert pipeline.requested_mode == "files"
+        assert pipeline.selected_run_counts == {"selected": 3, "processed": 2, "remaining": 1}
+        assert pipeline.evidence_class == "fingerprint_different"
+        assert pipeline.resumable is True
+        assert pipeline.recovery_action == "manual_reconciliation"
+        assert pipeline.message_code == "modified_external"
+        assert pipeline.hydration_state == "hydrated"
+        assert pipeline.hydration_count == 7
         tagging_service.get_reconcile_status.assert_called_once_with(library_doc)
 
     @pytest.mark.unit

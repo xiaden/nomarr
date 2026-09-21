@@ -23,6 +23,7 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_STATE_FIELD,
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dto.library_dto import WriteTagsResult
 from nomarr.services.infrastructure.pipeline_svc import LibraryPipelineService
 
 if TYPE_CHECKING:
@@ -339,10 +340,9 @@ class TestOnWriteComplete:
         mock_navidrome_svc: MagicMock,
     ) -> None:
         """A reconcile status without a pending count is an authoritative completion."""
-        mock_tagging_svc.get_reconcile_status.return_value = {}
         library, on_complete = self._dispatch_closure(pipeline_service, mock_tagging_svc)
 
-        on_complete()
+        on_complete(WriteTagsResult(processed=1, remaining=0, failed=0, outcome="complete"))
 
         mock_db.app.upsert_pipeline_state.assert_called_with(library, WRITE_STATE_FIELD, {"state": WRITE_COMPLETE})
         mock_navidrome_svc.trigger_rescan.assert_called_once()
@@ -355,23 +355,13 @@ class TestOnWriteComplete:
         mock_navidrome_svc: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A partial run returns the axis to not_written, warns, and skips the rescan."""
-        mock_tagging_svc.get_reconcile_status.return_value = {
-            "pending_count": 5,
-            "failed_count": 5,
-            "in_progress": False,
-            "outcome": "partial",
-        }
         library, on_complete = self._dispatch_closure(pipeline_service, mock_tagging_svc)
 
-        # Must not raise RuntimeError any more.
         with caplog.at_level(logging.WARNING, logger="nomarr.services.infrastructure.pipeline_svc"):
-            on_complete()
+            on_complete(WriteTagsResult(processed=0, remaining=5, failed=5, outcome="partial"))
 
         mock_db.app.upsert_pipeline_state.assert_called_once_with(
-            library,
-            WRITE_STATE_FIELD,
-            {"state": WRITE_NOT_WRITTEN},
+            library, WRITE_STATE_FIELD, {"state": WRITE_NOT_WRITTEN}
         )
         mock_navidrome_svc.trigger_rescan.assert_not_called()
         assert any(record.levelno == logging.WARNING for record in caplog.records)
@@ -384,15 +374,9 @@ class TestOnWriteComplete:
         mock_navidrome_svc: MagicMock,
     ) -> None:
         """Zero remaining files is the all-done representation and completes."""
-        mock_tagging_svc.get_reconcile_status.return_value = {
-            "pending_count": 0,
-            "failed_count": 0,
-            "in_progress": False,
-            "outcome": "complete",
-        }
         library, on_complete = self._dispatch_closure(pipeline_service, mock_tagging_svc)
 
-        on_complete()
+        on_complete(WriteTagsResult(processed=1, remaining=0, failed=0, outcome="complete"))
 
         mock_db.app.upsert_pipeline_state.assert_called_with(library, WRITE_STATE_FIELD, {"state": WRITE_COMPLETE})
         mock_navidrome_svc.trigger_rescan.assert_called_once()
@@ -472,9 +456,9 @@ class TestDispatchWrite:
         pipeline_service._dispatch_write(library)
 
         on_complete = mock_tagging_svc.start_write_tags_background.call_args.kwargs["on_complete"]
-        on_complete()
+        on_complete(WriteTagsResult(processed=1, remaining=0, failed=0, outcome="complete"))
 
-        mock_tagging_svc.get_reconcile_status.assert_called_once_with(library)
+        mock_tagging_svc.get_reconcile_status.assert_not_called()
         mock_db.app.upsert_pipeline_state.assert_called_with(library, WRITE_STATE_FIELD, {"state": WRITE_COMPLETE})
 
     def test_dispatch_write_on_complete_failure_resets_to_not_written(
@@ -485,13 +469,12 @@ class TestDispatchWrite:
     ) -> None:
         """A failing completion callback resets the axis before re-raising."""
         library = _make_library()
-        mock_tagging_svc.get_reconcile_status.side_effect = RuntimeError("reconcile boom")
+        mock_db.app.upsert_pipeline_state.side_effect = [RuntimeError("callback boom"), None]
 
         pipeline_service._dispatch_write(library)
-
         on_complete = mock_tagging_svc.start_write_tags_background.call_args.kwargs["on_complete"]
-        with pytest.raises(RuntimeError, match="reconcile boom"):
-            on_complete()
+        with pytest.raises(RuntimeError, match="callback boom"):
+            on_complete(WriteTagsResult(processed=1, remaining=0, failed=0, outcome="complete"))
 
         mock_db.app.upsert_pipeline_state.assert_called_with(
             library,

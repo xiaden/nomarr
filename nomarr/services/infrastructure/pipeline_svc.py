@@ -34,7 +34,7 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_NOT_WRITTEN,
     WRITE_STATE_FIELD,
 )
-from nomarr.helpers.dto.library_dto import LibraryPipelineStatusDTO
+from nomarr.helpers.dto.library_dto import LibraryPipelineStatusDTO, WriteTagsResult
 from nomarr.helpers.exceptions import LibraryOperationConflict
 from nomarr.services.domain.calibration_svc import CALIBRATION_GENERATE_TASK_ID, CalibrationService
 from nomarr.services.domain.library_svc.task_ids import library_task_id, write_tags_task_id
@@ -251,7 +251,7 @@ class LibraryPipelineService:
         task = ManagedTask(
             task_id=CALIBRATION_APPLY_TASK_ID,
             fn=self.tagging_svc._run_apply_calibration,
-            on_complete=lambda: self.on_apply_complete(),
+            on_complete=lambda _result: self.on_apply_complete(),
             daemon=False,
         )
         try:
@@ -362,11 +362,11 @@ class LibraryPipelineService:
 
         stop_event = threading.Event()
 
-        def on_complete() -> None:
+        def on_complete(result: WriteTagsResult | None = None) -> None:
             try:
-                reconcile_status = self.tagging_svc.get_reconcile_status(library)
-                remaining = reconcile_status.get("pending_count")
-                self.on_write_complete(library, remaining=remaining)
+                self.on_write_complete(library, result=result) if result is not None else self.on_write_complete(
+                    library
+                )
             except LibraryOperationConflict:
                 # A lifecycle race is not an ordinary task failure and must not
                 # be converted into a false completion or a generic BTS error.
@@ -430,7 +430,9 @@ class LibraryPipelineService:
         """React to auto-write being disabled for a library."""
         self.stop_write(library)
 
-    def on_write_complete(self, library: Library, *, remaining: int | None = None) -> None:
+    def on_write_complete(
+        self, library: Library, *, result: WriteTagsResult | None = None, remaining: int | None = None
+    ) -> None:
         """Complete a drained write run, or leave the axis resumable on partial.
 
         A full drain (``remaining == 0``, or ``None`` for direct callers that
@@ -447,6 +449,17 @@ class LibraryPipelineService:
                 that already have an authoritative completion guarantee.
 
         """
+        if result is not None:
+            remaining = result.remaining
+            if result.outcome != "complete" or result.remaining != 0:
+                transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+                logger.warning(
+                    "Library %s tag write finished without a full drain; "
+                    "tag_write axis returned to not_written and Navidrome rescan skipped",
+                    library.name,
+                )
+                return
+
         if remaining is not None and remaining > 0:
             transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
             logger.warning(
