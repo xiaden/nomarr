@@ -47,6 +47,33 @@ def test_docker_publish_is_release_tag_triggered_with_explicit_manual_channels()
 
 
 @pytest.mark.unit
+def test_e2e_defaults_to_full_sha_image_tag() -> None:
+    workflow = _load_yaml(ROOT / ".github/workflows/e2e.yml")
+    dispatch = _on(workflow)["workflow_dispatch"]
+    image_tag = dispatch["inputs"]["image_tag"]
+    assert "sha-<full-commit-sha>" in image_tag["description"]
+    run = next(step["run"] for step in workflow["jobs"]["e2e"]["steps"] if step.get("id") == "image")
+    assert 'TAG="${{ inputs.image_tag }}"' in run
+    assert 'TAG="sha-${{ github.sha }}"' in run
+    assert 'TAG="${SHA:0:7}"' not in run
+
+
+@pytest.mark.unit
+def test_release_policy_uses_latest_exact_name_check_run() -> None:
+    workflow = _load_yaml(DOCKER_PUBLISH)
+    run = next(
+        step["run"]
+        for step in workflow["jobs"]["policy"]["steps"]
+        if step.get("name") == "Require successful CI for automatic release"
+    )
+    assert ".check_runs[] | select(.name == $name)" in run
+    assert 'sort_by([(.created_at // ""), (.id // 0)])' in run
+    assert '"pending"' in run
+    assert '"failure"' in run
+    assert "any(.[]" not in run
+
+
+@pytest.mark.unit
 def test_build_base_declares_workflow_call_and_dispatch_only() -> None:
     on = _on(_load_yaml(BUILD_BASE))
     assert {"workflow_call", "workflow_dispatch"} <= set(on), (

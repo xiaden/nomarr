@@ -73,7 +73,7 @@ The sole exception is the CodeQL matrix: `analyze` matches real runs prefixed
 | `database-tests` | `backend-tests.yml` | push, pr, manual |
 | `frontend-checks` | `frontend-checks.yml` | push, pr, manual |
 | `build-and-push` | `docker-publish.yml` | release-tag push, manual |
-| `promote` | `docker-publish.yml` | release-tag push, manual |
+| `promote` | `docker-publish.yml` | release-tag push (manual only with `--require promote`) |
 | `e2e` | `e2e.yml` | manual |
 | `docs-check` | `docs-check.yml` | pr |
 | `analyze` | `codeql.yml` | main-target only (matrix `Analyze (<lang>)` runs; see below) |
@@ -96,9 +96,11 @@ and never silently ignored.
   has no `pull_request` trigger — no image is published on a PR, so a skipped
   publish is treated as not-applicable, never as success. `e2e` is
   NOT-APPLICABLE (manual-only).
-* **`manual`**: requires every runnable gate, including `e2e`. `docs-check` is
-  PR-only — `docs-check.yml` has no `workflow_dispatch` trigger — so it is
-  NOT-APPLICABLE on a manual run unless explicitly required.
+* **`manual`**: requires every runnable gate by default, including `e2e`;
+  `promote` is **NOT-APPLICABLE** unless explicitly required with
+  `--require promote`. `docs-check` is PR-only — `docs-check.yml` has no
+  `workflow_dispatch` trigger — so it is **NOT-APPLICABLE** on a manual run
+  unless explicitly required.
 
 ### CodeQL (`analyze`) is main-target only and opt-in
 

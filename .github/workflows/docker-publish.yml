@@ -115,12 +115,47 @@ jobs:
           failed=0
           while IFS= read -r required; do
             [[ -z "$required" ]] && continue
-            if jq -e --arg name "$required" '.check_runs | any(.[]; .name == $name and .conclusion == "success")' <<< "$checks_json" >/dev/null; then
-              echo "✓ ${required}"
-            else
-              echo "::error::Required check '${required}' has no successful run for ${GITHUB_SHA}."
-              failed=1
-            fi
+            latest_state="$({
+              jq -r --arg name "$required" --arg sha "$GITHUB_SHA" '
+                [.check_runs[] | select(.name == $name)]
+                | sort_by([(.created_at // ""), (.id // 0)])
+                | if length == 0 then
+                    "missing"
+                  else
+                    .[-1] as $run
+                    | if $run.head_sha != $sha then
+                        "wrong-commit"
+                      elif $run.status == "queued" or $run.status == "in_progress" then
+                        "pending"
+                      elif $run.status == "completed" and $run.conclusion == "success" then
+                        "success"
+                      else
+                        "failure"
+                      end
+                  end
+              ' <<< "$checks_json"
+            })"
+            case "$latest_state" in
+              success)
+                echo "✓ ${required}"
+                ;;
+              missing)
+                echo "::error::Required check '${required}' is missing for ${GITHUB_SHA}."
+                failed=1
+                ;;
+              pending)
+                echo "::error::Required check '${required}' latest run is pending for ${GITHUB_SHA}."
+                failed=1
+                ;;
+              wrong-commit)
+                echo "::error::Required check '${required}' latest run is for a different commit; refusing to release."
+                failed=1
+                ;;
+              *)
+                echo "::error::Required check '${required}' latest run did not succeed for ${GITHUB_SHA}."
+                failed=1
+                ;;
+            esac
           done <<< "$normalized"
           (( failed == 0 ))
 

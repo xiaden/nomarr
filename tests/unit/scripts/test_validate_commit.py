@@ -131,6 +131,25 @@ class TestValidateChecksSuccess:
         assert states["promote"] == "NOT-APPLICABLE"
 
 
+class TestManualPublicationContract:
+    @pytest.mark.unit
+    def test_manual_none_does_not_require_promotion(self) -> None:
+        runs = [r for r in _all_green() if r["name"] != "promote"]
+        report = validate_checks(SHA, runs, "manual")
+        assert report.ok is True
+        states = {r.name: r.state for r in report.results}
+        assert states["build-and-push"] == "PASS"
+        assert states["promote"] == "NOT-APPLICABLE"
+
+    @pytest.mark.unit
+    def test_manual_promotion_can_be_explicitly_required(self) -> None:
+        runs = [r for r in _all_green() if r["name"] != "promote"]
+        report = validate_checks(SHA, runs, "manual", require={"promote"})
+        assert report.ok is False
+        result = next(r for r in report.results if r.name == "promote")
+        assert result.state == "MISSING"
+
+
 class TestValidateChecksMissing:
     @pytest.mark.unit
     def test_missing_required_check_reported(self) -> None:
@@ -391,6 +410,20 @@ class TestMain:
         with patch("scripts.validate_commit.subprocess.run", return_value=_completed_result(_payload(_all_green()))):
             code = main([SHA, "--trigger", "push", "--repo", "xiaden/nomarr"])
         assert code == EXIT_OK
+
+    @pytest.mark.unit
+    def test_manual_without_promotion_exits_zero(self) -> None:
+        runs = [r for r in _all_green() if r["name"] != "promote"]
+        with patch("scripts.validate_commit.subprocess.run", return_value=_completed_result(_payload(runs))):
+            code = main([SHA, "--trigger", "manual", "--repo", "xiaden/nomarr"])
+        assert code == EXIT_OK
+
+    @pytest.mark.unit
+    def test_manual_explicit_promotion_requirement_exits_nonzero(self) -> None:
+        runs = [r for r in _all_green() if r["name"] != "promote"]
+        with patch("scripts.validate_commit.subprocess.run", return_value=_completed_result(_payload(runs))):
+            code = main([SHA, "--trigger", "manual", "--require", "promote", "--repo", "xiaden/nomarr"])
+        assert code == EXIT_VALIDATION_FAILED
 
     @pytest.mark.unit
     def test_missing_check_exits_nonzero(self) -> None:

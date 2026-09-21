@@ -18,7 +18,7 @@ on:
         description: Publish the standalone branch aliases in addition to the immutable tag.
         required: true
         type: boolean
-        default: true
+        default: false
 
 jobs:
   build-base:
@@ -59,8 +59,8 @@ jobs:
           base_version="$(cat BASE_VERSION)"
           tags=("${repo}:${base_tag}")
 
-          # The standalone workflow keeps its branch aliases; reusable callers use
-          # only the immutable output so manual publication can never move aliases.
+          # Reusable callers publish only the immutable output. Standalone manual
+          # runs default to that same safe behavior; aliases require explicit opt-in.
           if [[ "${{ inputs.publish_branch_aliases || false }}" == "true" && "${GITHUB_REF_NAME}" == "main" ]]; then
             tags+=("${repo}:latest" "${repo}:v${base_version}")
           elif [[ "${{ inputs.publish_branch_aliases || false }}" == "true" && "${GITHUB_REF_NAME}" == "develop" ]]; then

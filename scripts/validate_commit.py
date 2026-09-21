@@ -93,10 +93,11 @@ explicitly listed in the report). Current applicability:
   not-applicable rather than treating a skipped publish as success). ``e2e`` is
   NOT-APPLICABLE (manual-only). ``analyze`` is NOT-APPLICABLE for develop-target
   PRs.
-* ``manual`` — requires every gate that can run, including ``e2e``.
-  ``docs-check`` is PR-only (``docs-check.yml`` has no ``workflow_dispatch``
-  trigger), so it is NOT-APPLICABLE unless explicitly required with
-  ``--require docs-check``.
+* ``manual`` — requires every gate that can run by default, including ``e2e``;
+  ``promote`` is NOT-APPLICABLE unless explicitly required with
+  ``--require promote``. ``docs-check`` is PR-only (``docs-check.yml`` has no
+  ``workflow_dispatch`` trigger), so it is NOT-APPLICABLE unless explicitly
+  required with ``--require docs-check``.
 
 **CodeQL (``analyze``) is main-target only and opt-in.** ``codeql.yml`` runs on
 pushes to ``main``, PRs to ``main``, and a weekly schedule — it does not run on
@@ -227,8 +228,9 @@ REQUIRED_CHECKS: dict[str, CheckSpec] = {
         triggers=frozenset({"push", "pr", "manual"}),
         note="npm ci + lint + tsc + vitest + production build",
     ),
-    # Docker publish (.github/workflows/docker-publish.yml) — release-tag push/manual only,
-    # never PR (no image is published on a pull request).
+    # Docker publish (.github/workflows/docker-publish.yml) — build on release-tag
+    # push/manual; promotion is release-tag push by default and manual only when
+    # explicitly required with --require promote; never PR.
     "build-and-push": CheckSpec(
         name="build-and-push",
         workflow="docker-publish.yml",
@@ -238,8 +240,8 @@ REQUIRED_CHECKS: dict[str, CheckSpec] = {
     "promote": CheckSpec(
         name="promote",
         workflow="docker-publish.yml",
-        triggers=frozenset({"push", "manual"}),
-        note="image promote/re-tag; release-tag push or explicit manual dispatch; NOT-APPLICABLE on PRs",
+        triggers=frozenset({"push"}),
+        note="image promote/re-tag; release-tag push; manual only with --require promote; NOT-APPLICABLE on PRs",
     ),
     # E2E (.github/workflows/e2e.yml) — manual-only.
     "e2e": CheckSpec(
@@ -612,8 +614,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Context that selects which checks are required. Default: %(default)s. "
             "push requires docker publish; pr requires docs-check and treats "
-            "docker as not-applicable; manual requires every runnable gate "
-            "except PR-only docs-check, including e2e."
+            "docker as not-applicable; manual requires every runnable gate by "
+            "default except PR-only docs-check, with promote optional unless "
+            "--require promote is used, and e2e required."
         ),
     )
     parser.add_argument(

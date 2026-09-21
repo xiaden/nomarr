@@ -297,7 +297,7 @@ def test_build_base_exposes_full_sha_output_and_publishes_it_on_all_arms() -> No
     on = _on(workflow)
     assert on["workflow_call"]["outputs"]["base_tag"]["value"] == "${{ jobs.build-base.outputs.base_tag }}"
     assert on["workflow_call"]["inputs"]["publish_branch_aliases"]["default"] is False
-    assert on["workflow_dispatch"]["inputs"]["publish_branch_aliases"]["default"] is True
+    assert on["workflow_dispatch"]["inputs"]["publish_branch_aliases"]["default"] is False
 
     job = workflow["jobs"]["build-base"]
     tags_step = next(step for step in job["steps"] if step.get("id") == "tags")

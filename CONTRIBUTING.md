@@ -219,7 +219,7 @@ cd ..
 cd e2e && npx playwright test
 ```
 
-**E2E, docs, and security are independent workflows.** E2E (`.github/workflows/e2e.yml`) is manual-only (`workflow_dispatch`) and by default runs against the image tagged with the short SHA of the commit under test. Docs consistency (`.github/workflows/docs-check.yml`) runs on pull requests. CodeQL (`.github/workflows/codeql.yml`) is the security gate, scheduled weekly and on PRs to `main`.
+**E2E, docs, and security are independent workflows.** E2E (`.github/workflows/e2e.yml`) is manual-only (`workflow_dispatch`) and by default runs against the immutable image tagged `sha-<full-commit-sha>` for the commit under test. Docs consistency (`.github/workflows/docs-check.yml`) runs on pull requests. CodeQL (`.github/workflows/codeql.yml`) is the security gate, scheduled weekly and on PRs to `main`.
 
 ### Validating CI Completion for an Exact Commit
 
@@ -249,7 +249,8 @@ the trigger context (`--trigger push|pr|manual`, default `push`); checks that ar
 documented as not applicable to the context are reported as `NOT-APPLICABLE`,
 never silently treated as success. `docs-check` is PR-only (`docs-check.yml` has
 no `workflow_dispatch` trigger), so a `--trigger manual` run does not falsely
-require it. CodeQL is main-target only, so a main-target commit must be validated
+require it; `promote` is also NOT-APPLICABLE for manual validation unless
+explicitly requested with `--require promote`. CodeQL is main-target only, so a main-target commit must be validated
 with `--require analyze`. `analyze` is the one exception to the exact job-name
 rule: the `codeql.yml` job is a matrix (`name: Analyze (${{ matrix.language }})`),
 so the real check runs are `Analyze (actions)`, `Analyze (go)`, and so on. The
