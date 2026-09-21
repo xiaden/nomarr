@@ -115,7 +115,7 @@ export function LibraryManagement() {
         }
         // Build lookup for quick access
         const freshMap = new Map(freshData.map(lib => [lib.library_id, lib]));
-        
+
         // Check if any library actually changed
         let hasChanges = false;
         for (const lib of prev) {
@@ -139,17 +139,18 @@ export function LibraryManagement() {
             break;
           }
         }
-        
+
         // No changes - return same reference to prevent re-render
         if (!hasChanges) {
           return prev;
         }
-        
+
+
         // Merge: keep existing objects where unchanged, update only changed libraries
         return prev.map(lib => {
           const fresh = freshMap.get(lib.library_id);
           if (!fresh) return lib;
-          
+
           // Check if this specific library changed
           if (
             lib.scanStatus === fresh.scanStatus &&
@@ -162,7 +163,7 @@ export function LibraryManagement() {
           ) {
             return lib; // Same reference - no re-render for this item
           }
-          
+
           return fresh; // New object - triggers re-render for this item only
         });
       });
@@ -494,6 +495,7 @@ export function LibraryManagement() {
       case "deferred": return "Watcher work was deferred and will be retried later.";
       case "conflict": return "This library has a lifecycle conflict; retry after the active operation completes.";
       case "unavailable": return "The selected run result is unavailable; refresh status before retrying.";
+      case "evicted": return "The selected run result was evicted; refresh status before retrying.";
       case "active": return `Tag write is active (${pipelineLibrary.requested_mode ?? "none"}).`;
       default: return null;
     }

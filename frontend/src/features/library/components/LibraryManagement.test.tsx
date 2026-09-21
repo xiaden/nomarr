@@ -165,6 +165,21 @@ describe("LibraryManagement", () => {
     await waitFor(() => expect(screen.getByText("Tag write remains pending; manual reconciliation is required.")).toBeInTheDocument());
   });
 
+  it("renders the evicted outcome message in the library management view", async () => {
+    vi.mocked(getWorkStatus).mockResolvedValue({
+      ...workStatusFixture,
+      pipeline_libraries: [{
+        ...workStatusFixture.pipeline_libraries[0],
+        outcome: "evicted",
+      }],
+    });
+
+    renderWithProviders(<LibraryManagement />);
+
+    await waitFor(() => expect(screen.getByText("library name")).toBeInTheDocument());
+    expect(screen.getByText("The selected run result was evicted; refresh status before retrying.")).toBeInTheDocument();
+  });
+
   it("shows an error message when starting tag reconciliation fails", async () => {
     vi.mocked(writeTags).mockRejectedValue(new Error("Network error"));
     const user = userEvent.setup();
