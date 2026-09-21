@@ -37,6 +37,7 @@ Internal HTTP endpoints powering the Nomarr web dashboard.
 
 - **One file per domain**: Each `*_if.py` file groups related endpoints (mirrors `types/` structure)
 - **Thin handlers**: Endpoints decode IDs, call one service method, encode response — no business logic
+- **Lifecycle conflicts**: Quick/full scan and write-tag actions return HTTP 409 with the conflict detail when the library is scanning, writing, or has hydration debt. Clients should retry after the reported lifecycle work completes; write-tag starts return HTTP 202 and a task ID when admitted.
 - **DI via Depends**: All services injected through `dependencies.py` providers
 
 ## Dependencies

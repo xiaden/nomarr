@@ -111,7 +111,29 @@ class TestStartWriteTagsBackground:
 
             managed_task.fn()
 
-            mock_write_tags.assert_called_once_with(library, exclude_locators=set(), retry_counts={})
+            mock_write_tags.assert_called_once_with(
+                library, exclude_locators=set(), retry_counts={}, requested_mode="none"
+            )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_start_write_tags_background_propagates_requested_mode(self) -> None:
+        """The normalized mode reaches the admitted batch seam."""
+        mock_bts = MagicMock()
+        mock_bts.start_task.return_value = "write_tags:lib1"
+        service = _make_service(bts=mock_bts)
+        with patch.object(
+            service,
+            "_write_admitted_tags_to_files",
+            return_value=SimpleNamespace(remaining=0),
+        ) as mock_write_tags:
+            service.start_write_tags_background(_make_library(), threading.Event(), requested_mode="database")
+            managed_task = mock_bts.start_task.call_args.args[0]
+            managed_task.fn()
+
+        assert mock_write_tags.call_args.kwargs["requested_mode"] == "database"
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -204,7 +226,14 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(_make_library())
 
-        assert result == {"pending_count": 4, "failed_count": 0, "in_progress": True, "outcome": "running"}
+        assert result["pending_count"] == 4
+        assert result["failed_count"] == 0
+        assert result["in_progress"] is True
+        assert result["outcome"] == "active"
+        assert result["message_code"] == "TAG_WRITE_ACTIVE"
+        assert result["requested_mode"] is None
+        assert result["resumable"] is True
+        assert result["recovery_action"] == "retry"
         mock_bts.get_task_status.assert_called_once_with("write_tags:lib1")
 
     @pytest.mark.unit
@@ -224,7 +253,10 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(_make_library())
 
-        assert result == {"pending_count": 2, "failed_count": 0, "in_progress": False, "outcome": "partial"}
+        assert result["pending_count"] == 2
+        assert result["failed_count"] == 0
+        assert result["in_progress"] is False
+        assert result["outcome"] == "not_written"
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -246,7 +278,13 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(_make_library())
 
-        assert result == {"pending_count": 2, "failed_count": 2, "in_progress": False, "outcome": "partial"}
+        assert result["pending_count"] == 2
+        assert result["failed_count"] == 2
+        assert result["in_progress"] is False
+        assert result["outcome"] == "partial"
+        assert result["message_code"] == "TAG_WRITE_PARTIAL"
+        assert result["selected_run_counts"] == {"processed": 1, "failed": 2, "remaining": 2}
+        assert result["resumable"] is True
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -280,7 +318,10 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(_make_library())
 
-        assert result == {"pending_count": 0, "failed_count": 0, "in_progress": False, "outcome": "complete"}
+        assert result["pending_count"] == 0
+        assert result["failed_count"] == 0
+        assert result["in_progress"] is False
+        assert result["outcome"] == "unavailable"
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -302,7 +343,11 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(_make_library())
 
-        assert result["outcome"] == "complete"
+        assert result["outcome"] == "written"
+        assert result["message_code"] == "TAG_WRITE_COMPLETE"
+        assert result["selected_run_counts"] == {"processed": 2, "failed": 0, "remaining": 0}
+        assert result["resumable"] is False
+        assert result["recovery_action"] == "none"
         assert result["failed_count"] == 0
 
 

@@ -386,6 +386,7 @@ class LibraryPipelineService:
                 stop_event,
                 on_complete=on_complete,
                 admitted=True,
+                requested_mode="none",
             )
         except LibraryOperationConflict:
             logger.info("Library %s write admission conflicted; leaving work resumable", library.name)

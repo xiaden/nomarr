@@ -6,7 +6,7 @@ processing velocity, and ETA.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from nomarr.helpers.constants.pipeline_states import (
     CAL_IN_PROGRESS,
@@ -18,7 +18,16 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_IN_PROGRESS,
     WRITE_STATE_FIELD,
 )
-from nomarr.helpers.dto.info_dto import LibraryPipelineInfo, ScanningLibraryInfo, WorkStatusResult
+from nomarr.helpers.dto.info_dto import (
+    LibraryPipelineInfo,
+    RecoveryAction,
+    ScanningLibraryInfo,
+    SelectedRunCounts,
+    WorkStatusResult,
+    WriteEvidenceClass,
+    WriteOutcomeStatus,
+    WriteRequestedMode,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -35,6 +44,7 @@ def compute_work_status(
     library_docs: list[LibraryDict] | None = None,
     *,
     write_outcomes: Mapping[str, str | None] | None = None,
+    write_statuses: Mapping[str, Mapping[str, object]] | None = None,
 ) -> WorkStatusResult:
     """Compute unified work status from raw data.
 
@@ -103,6 +113,28 @@ def compute_work_status(
                 state=state,
                 library_auto_write=bool(lib.library_auto_write),
                 write_outcome=(write_outcomes or {}).get(lib_name),
+                scan_state=lib_state.get(SCAN_STATE_FIELD),
+                tag_write_state=lib_state.get(WRITE_STATE_FIELD),
+                requested_mode=cast(
+                    "WriteRequestedMode | None", (write_statuses or {}).get(lib_name, {}).get("requested_mode")
+                ),
+                selected_run_counts=cast(
+                    "SelectedRunCounts | None",
+                    cast("SelectedRunCounts", (write_statuses or {}).get(lib_name, {}).get("selected_run_counts", {}))
+                    if (write_statuses or {}).get(lib_name, {}).get("selected_run_counts") is not None
+                    else None,
+                ),
+                outcome=cast("WriteOutcomeStatus | None", (write_statuses or {}).get(lib_name, {}).get("outcome")),
+                evidence_class=cast(
+                    "WriteEvidenceClass | None", (write_statuses or {}).get(lib_name, {}).get("evidence_class")
+                ),
+                resumable=cast("bool | None", (write_statuses or {}).get(lib_name, {}).get("resumable")),
+                recovery_action=cast(
+                    "RecoveryAction | None", (write_statuses or {}).get(lib_name, {}).get("recovery_action")
+                ),
+                message_code=cast("str | None", (write_statuses or {}).get(lib_name, {}).get("message_code")),
+                hydration_state=cast("str | None", (write_statuses or {}).get(lib_name, {}).get("hydration_state")),
+                hydration_count=cast("int | None", (write_statuses or {}).get(lib_name, {}).get("hydration_count")),
             )
         )
 

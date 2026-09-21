@@ -22,13 +22,29 @@ export interface ScanningLibrary {
 /**
  * Per-library pipeline status info for dashboard polling.
  */
+export type RecoveryOutcome =
+  | "active" | "written" | "partial" | "not_written" | "cancelled" | "conflict"
+  | "indeterminate" | "raced" | "failed" | "replacement" | "deferred" | "unavailable";
+export type RecoveryEvidence = "fingerprint_same" | "fingerprint_different" | "fingerprint_indeterminate";
+
 export interface PipelineLibrary {
   library_id: string;
   name: string;
   state: string;
   library_auto_write: boolean;
-  /** Tag-write reconcile outcome ("running" | "complete" | "partial"); absent/None is unknown. */
+  /** Legacy compatibility projection; normalized fields below are authoritative. */
   write_outcome?: string | null;
+  scan_state?: string | null;
+  hydration_state?: string | null;
+  hydration_count?: number | null;
+  tag_write_state?: string | null;
+  requested_mode?: "none" | "files" | "database" | null;
+  selected_run_counts?: Record<string, number> | null;
+  outcome?: RecoveryOutcome | null;
+  evidence_class?: RecoveryEvidence | null;
+  resumable?: boolean | null;
+  recovery_action?: string | null;
+  message_code?: string | null;
 }
 
 /**

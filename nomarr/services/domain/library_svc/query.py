@@ -417,9 +417,12 @@ class LibraryQueryMixin:
         # projection of the domain ``Library``; reconcile status only reads the
         # natural identity fields, so the projection is structurally sufficient.
         write_outcomes: dict[str, str | None] = {}
+        write_statuses: dict[str, dict[str, object]] = {}
         if tagging_service is not None:
             for lib in libraries:
-                write_outcomes[lib.name] = tagging_service.get_reconcile_status(cast("Library", lib))["outcome"]
+                status = tagging_service.get_reconcile_status(cast("Library", lib))
+                write_outcomes[lib.name] = cast("str | None", status.get("outcome"))
+                write_statuses[lib.name] = status
 
         return compute_work_status(
             libraries,
@@ -428,6 +431,7 @@ class LibraryQueryMixin:
             pipeline_states,
             library_docs=libraries,
             write_outcomes=write_outcomes,
+            write_statuses=write_statuses,
         )
 
     def get_recently_processed(

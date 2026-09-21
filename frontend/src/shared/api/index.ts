@@ -27,7 +27,7 @@ export {
     list, writeTags,
     scanFull, scanQuick, update, updateWriteMode,
     type CreateLibraryPayload, type LibraryPipelineStatus, type LibraryStats,
-    type StartTagWriteResult, type UpdateLibraryPayload, type UpdateWriteModeResult
+    type StartTagWriteResult, type TagWriteMode, type UpdateLibraryPayload, type UpdateWriteModeResult
 } from "./library";
 
 // Files - explicit exports to avoid conflicts

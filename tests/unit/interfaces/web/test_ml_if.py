@@ -145,6 +145,17 @@ class TestMlIfRoutes:
                 "state": "write_ready",
                 "library_auto_write": False,
                 "write_outcome": "partial",
+                "scan_state": None,
+                "hydration_state": None,
+                "hydration_count": None,
+                "tag_write_state": None,
+                "requested_mode": None,
+                "selected_run_counts": None,
+                "outcome": None,
+                "evidence_class": None,
+                "resumable": None,
+                "recovery_action": None,
+                "message_code": None,
             },
         ]
         mock_library_service.get_work_status.assert_called_once_with(tagging_service=mock_tagging_service)

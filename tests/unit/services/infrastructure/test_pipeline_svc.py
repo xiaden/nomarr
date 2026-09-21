@@ -292,6 +292,7 @@ class TestOnApplyComplete:
             mock_tagging_svc.start_write_tags_background.call_args.args[1],
             on_complete=mock_tagging_svc.start_write_tags_background.call_args.kwargs["on_complete"],
             admitted=True,
+            requested_mode="none",
         )
 
     def test_on_apply_complete_skips_deleted_library(

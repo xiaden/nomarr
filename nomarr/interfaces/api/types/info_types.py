@@ -5,7 +5,7 @@ External API contracts for info endpoints.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel, Field
 
@@ -188,25 +188,49 @@ class ScanningLibraryResponse(BaseModel):
 
 
 class LibraryPipelineInfoResponse(BaseModel):
-    """Per-library pipeline state info for dashboard work-status polling."""
+    """Per-library pipeline and normalized recovery status."""
 
     library_id: str = Field(..., description="Natural library name (mechanism A)")
     name: str = Field(..., description="Library name")
-    state: str = Field(..., description="Current pipeline state key")
+    state: str = Field(..., description="Compatibility pipeline state key")
     library_auto_write: bool = Field(..., description="Whether the library auto-writes tags")
-    write_outcome: str | None = Field(
-        None, description="Tag-write reconcile outcome (complete/partial/running) if known"
-    )
+    write_outcome: str | None = Field(None, description="Legacy reconcile outcome")
+    scan_state: str | None = None
+    hydration_state: str | None = None
+    hydration_count: int | None = None
+    tag_write_state: str | None = None
+    requested_mode: str | None = None
+    selected_run_counts: dict[str, int] | None = None
+    outcome: str | None = None
+    evidence_class: str | None = None
+    resumable: bool | None = None
+    recovery_action: str | None = None
+    message_code: str | None = None
 
     @classmethod
     def from_dto(cls, dto: LibraryPipelineInfo) -> LibraryPipelineInfoResponse:
-        """Convert LibraryPipelineInfo DTO to Pydantic response model."""
+        """Convert the normalized domain status projection to the wire model."""
         return cls(
             library_id=dto.library_id,
             name=dto.name,
             state=dto.state,
             library_auto_write=dto.library_auto_write,
             write_outcome=dto.write_outcome,
+            scan_state=dto.scan_state,
+            hydration_state=dto.hydration_state,
+            hydration_count=dto.hydration_count,
+            tag_write_state=dto.tag_write_state,
+            requested_mode=dto.requested_mode,
+            selected_run_counts=(
+                {key: int(cast("int", value)) for key, value in dto.selected_run_counts.items()}
+                if dto.selected_run_counts is not None
+                else None
+            ),
+            outcome=dto.outcome,
+            evidence_class=dto.evidence_class,
+            resumable=dto.resumable,
+            recovery_action=dto.recovery_action,
+            message_code=dto.message_code,
         )
 
 

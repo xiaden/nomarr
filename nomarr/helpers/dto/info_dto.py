@@ -6,7 +6,7 @@ Data transfer objects for system info and health status endpoints.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal, TypedDict
 
 
 @dataclass
@@ -117,18 +117,71 @@ class ScanningLibraryInfo:
     total: int
 
 
+WriteRequestedMode = Literal["none", "files", "database"]
+WriteEvidenceClass = Literal["fingerprint_same", "fingerprint_different", "fingerprint_indeterminate"]
+WriteOutcomeStatus = Literal[
+    "active",
+    "written",
+    "partial",
+    "not_written",
+    "cancelled",
+    "conflict",
+    "indeterminate",
+    "raced",
+    "failed",
+    "replacement",
+    "deferred",
+    "unavailable",
+    "evicted",
+]
+RecoveryAction = Literal[
+    "none",
+    "manual_reconciliation",
+    "retry",
+    "adopt_database_metadata",
+    "project_database_to_files",
+    "replacement_reimport_requeue",
+    "deferred_retry",
+    "refresh_status",
+]
+
+
+class SelectedRunCounts(TypedDict, total=False):
+    """Counts belonging to the selected write run, never global pending work."""
+
+    selected: int
+    processed: int
+    failed: int
+    remaining: int
+    modified_external: int
+    refreshed_database: int
+    overwritten_files: int
+    raced: int
+    cancelled: int
+    deferred: int
+    unavailable: int
+
+
 @dataclass
 class LibraryPipelineInfo:
-    """Per-library pipeline state info for dashboard work-status polling.
-
-    ``library_id`` is the natural library name (mechanism A).
-    """
+    """Per-library pipeline and recovery status for work-status polling."""
 
     library_id: str
     name: str
     state: str
     library_auto_write: bool
     write_outcome: str | None = None
+    scan_state: str | None = None
+    hydration_state: str | None = None
+    hydration_count: int | None = None
+    tag_write_state: str | None = None
+    requested_mode: WriteRequestedMode | None = None
+    selected_run_counts: SelectedRunCounts | None = None
+    outcome: WriteOutcomeStatus | None = None
+    evidence_class: WriteEvidenceClass | None = None
+    resumable: bool | None = None
+    recovery_action: RecoveryAction | None = None
+    message_code: str | None = None
 
 
 @dataclass

@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.library_dto import StartScanResult
-from nomarr.helpers.exceptions import LibraryAlreadyScanningError
+from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryOperationConflict
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import (
     get_library_service,
@@ -163,12 +163,86 @@ class TestLibraryScanRoutes:
         """A concurrent scan should surface as HTTP 409."""
         library = make_library()
         mock_library_service.get_library_by_name.return_value = library
-        mock_library_service.start_quick_scan.side_effect = LibraryAlreadyScanningError()
+        mock_library_service.start_quick_scan.side_effect = LibraryAlreadyScanningError(
+            "Library is already being scanned"
+        )
 
         response = client.post("/api/web/library/Test%20Library/scan/quick")
 
         assert response.status_code == 409
         assert response.json() == {"detail": "Library is already being scanned"}
+
+    def test_scan_quick_maps_operation_conflict_to_409_with_detail(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+    ) -> None:
+        library = make_library()
+        conflict = LibraryOperationConflict("scan", scan_state="scanning", tag_write_state="not_written")
+        mock_library_service.get_library_by_name.return_value = library
+        mock_library_service.start_quick_scan.side_effect = conflict
+
+        response = client.post("/api/web/library/Test%20Library/scan/quick")
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": str(conflict)}
+
+    def test_scan_full_maps_operation_conflict_to_409_with_detail(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+    ) -> None:
+        library = make_library()
+        conflict = LibraryOperationConflict("scan", scan_state="scanning", tag_write_state="not_written")
+        mock_library_service.get_library_by_name.return_value = library
+        mock_library_service.start_full_scan.side_effect = conflict
+
+        response = client.post("/api/web/library/Test%20Library/scan/full")
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": str(conflict)}
+
+    def test_repair_tags_maps_operation_conflict_to_409_with_detail(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+    ) -> None:
+        library = make_library()
+        conflict = LibraryOperationConflict("scan", scan_state="scanning", tag_write_state="not_written")
+        mock_library_service.get_library_by_name.return_value = library
+        mock_library_service.repair_library_tags.side_effect = conflict
+
+        response = client.post("/api/web/library/Test%20Library/repair-tags")
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": str(conflict)}
+
+    def test_write_tag_maps_operation_conflict_to_409_with_detail(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        library = make_library()
+        conflict = LibraryOperationConflict("tag_write", scan_state="scanning", tag_write_state="not_written")
+        mock_library_service.get_library_by_name.return_value = library
+        mock_tagging_service.start_write_tags_background.side_effect = conflict
+
+        response = client.post(
+            "/api/web/library/Test%20Library/write-tag",
+            json={"overwrite": "files"},
+        )
+
+        assert response.status_code == 409
+        assert response.json() == {
+            "detail": {
+                "code": "LIBRARY_OPERATION_CONFLICT",
+                "operation": "tag_write",
+                "scan_state": "scanning",
+                "tag_write_state": "not_written",
+                "not_hydrated_count": 0,
+            }
+        }
 
     def test_scan_full_returns_started_response(
         self,
@@ -281,6 +355,119 @@ class TestLibraryReconcile:
 class TestLibraryWriteTag:
     """Tests for the write-tag endpoint."""
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            None,
+            {},
+            {"overwrite": "none"},
+            {"overwrite": "files"},
+            {"overwrite": "database"},
+        ],
+    )
+    def test_write_tag_accepts_strict_valid_payloads(
+        self,
+        payload: dict[str, str] | None,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
+        mock_tagging_service.start_write_tags_background.return_value = "task-42"
+
+        response = client.post(
+            "/api/web/library/Test%20Library/write-tag",
+            **({"json": payload} if payload is not None else {}),
+        )
+
+        assert response.status_code == 202
+        expected = "none" if not payload else payload["overwrite"]
+        assert response.json()["requested_mode"] == expected
+        assert mock_tagging_service.start_write_tags_background.call_args.kwargs["requested_mode"] == expected
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            [],
+            "files",
+            1,
+            {"overwrite": None},
+            {"overwrite": ""},
+            {"overwrite": "bogus"},
+            {"overwrite": 1},
+            {"extra": "x"},
+            {"overwrite": "files", "extra": 1},
+        ],
+    )
+    def test_write_tag_rejects_invalid_json_before_library_resolution(
+        self,
+        payload: object,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        mock_library_service.get_library_by_name.return_value = make_library()
+        response = client.post("/api/web/library/Test%20Library/write-tag", json=payload)
+        assert response.status_code == 422
+        mock_library_service.get_library_by_name.assert_not_called()
+        mock_tagging_service.start_write_tags_background.assert_not_called()
+
+    def test_write_tag_rejects_null_body_before_library_resolution(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        response = client.post(
+            "/api/web/library/Test%20Library/write-tag",
+            content=b"null",
+            headers={"content-type": "application/json"},
+        )
+        assert response.status_code == 422
+        mock_library_service.get_library_by_name.assert_not_called()
+        mock_tagging_service.start_write_tags_background.assert_not_called()
+
+    def test_write_tag_rejects_malformed_json_before_library_resolution(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        response = client.post(
+            "/api/web/library/Test%20Library/write-tag",
+            content=b'{"overwrite":',
+            headers={"content-type": "application/json"},
+        )
+        assert response.status_code == 422
+        mock_library_service.get_library_by_name.assert_not_called()
+        mock_tagging_service.start_write_tags_background.assert_not_called()
+
+    def test_write_tag_rejects_query_only_overwrite_before_library_resolution(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        response = client.post("/api/web/library/Test%20Library/write-tag?overwrite=files")
+        assert response.status_code == 422
+        mock_library_service.get_library_by_name.assert_not_called()
+        mock_tagging_service.start_write_tags_background.assert_not_called()
+
+    def test_write_tag_rejects_body_query_conflict_before_library_resolution(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        response = client.post(
+            "/api/web/library/Test%20Library/write-tag?overwrite=database",
+            json={"overwrite": "files"},
+        )
+        assert response.status_code == 422
+        mock_library_service.get_library_by_name.assert_not_called()
+        mock_tagging_service.start_write_tags_background.assert_not_called()
+
     def test_write_tag_returns_task_id(
         self,
         client: TestClient,
@@ -295,8 +482,14 @@ class TestLibraryWriteTag:
         response = client.post("/api/web/library/Test%20Library/write-tag")
 
         assert response.status_code == 202
-        assert response.json() == {"status": "started", "task_id": "task-42"}
+        assert response.json() == {
+            "status": "started",
+            "task_id": "task-42",
+            "requested_mode": "none",
+            "outcome": "active",
+        }
         assert mock_tagging_service.start_write_tags_background.call_args.args[0] is library
+        assert mock_tagging_service.start_write_tags_background.call_args.kwargs["requested_mode"] == "none"
 
     def test_write_tag_rescan_skipped_when_pending_work_remains(
         self,
@@ -350,6 +543,36 @@ class TestLibraryWriteTag:
         on_complete()
 
         mock_navidrome_service.trigger_rescan.assert_called_once()
+
+    def test_write_tag_conflict_returns_structured_409_without_dispatch(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+        mock_navidrome_service: MagicMock,
+    ) -> None:
+        library = make_library()
+        conflict = LibraryOperationConflict(
+            "tag_write", scan_state="scanning", tag_write_state="not_written", not_hydrated_count=3
+        )
+        mock_library_service.get_library_by_name.return_value = library
+        mock_tagging_service.start_write_tags_background.side_effect = conflict
+
+        response = client.post(
+            "/api/web/library/Test%20Library/write-tag",
+            json={"overwrite": "database"},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == {
+            "code": "LIBRARY_OPERATION_CONFLICT",
+            "operation": "tag_write",
+            "scan_state": "scanning",
+            "tag_write_state": "not_written",
+            "not_hydrated_count": 3,
+        }
+        mock_tagging_service.start_write_tags_background.assert_called_once()
+        mock_navidrome_service.trigger_rescan.assert_not_called()
 
     def test_write_tag_returns_404_when_library_missing(
         self,

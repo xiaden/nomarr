@@ -173,7 +173,10 @@ async def ml_trigger_vram_probe(
         ) from e
 
 
-@router.get("/work-status", dependencies=[Depends(verify_session)])
+@router.get(
+    "/work-status",
+    dependencies=[Depends(verify_session)],
+)
 async def web_work_status(
     library_service: Annotated[LibraryService, Depends(get_library_service)],
     tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],

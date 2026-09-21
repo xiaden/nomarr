@@ -3,11 +3,11 @@
 import asyncio
 import logging
 import threading
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 
-from nomarr.helpers.exceptions import LibraryAlreadyScanningError
+from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryOperationConflict
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.id_codec import decode_library_name
@@ -18,6 +18,7 @@ from nomarr.interfaces.api.types.library_types import (
     StartTagWriteResponse,
     UpdateWriteModeResponse,
     ValidateLibraryTagsResponse,
+    WriteTagRequest,
 )
 from nomarr.interfaces.api.web.dependencies import (
     get_library_service,
@@ -51,15 +52,21 @@ async def scan_library_quick(
     library_name: str,
     library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> StartScanWithStatusResponse:
-    """Start a quick scan for a specific library."""
+    """Start a quick scan for a library.
+
+    Returns HTTP 409 when the library is already scanning or another admitted
+    lifecycle operation (such as tag writing) conflicts with the request. The
+    response detail identifies the current scan, tag-write, and hydration state;
+    retry the request after the conflicting operation becomes admissible.
+    """
     library = await _resolve_library(library_service, library_name)
     if library is None:
         raise HTTPException(status_code=404, detail="Library not found")
     try:
         stats = await asyncio.to_thread(library_service.start_quick_scan, library)
         return StartScanWithStatusResponse.from_dto(stats, library.name)
-    except LibraryAlreadyScanningError:
-        raise HTTPException(status_code=409, detail="Library is already being scanned") from None
+    except (LibraryAlreadyScanningError, LibraryOperationConflict) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     except Exception as e:
         logger.exception(f"[Web API] Error starting quick scan for library {library.name}")
         raise HTTPException(
@@ -73,15 +80,20 @@ async def scan_library_full(
     library_name: str,
     library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> StartScanWithStatusResponse:
-    """Start a full scan for a specific library."""
+    """Start a full scan for a library.
+
+    Returns HTTP 409 when the library is already scanning or another admitted
+    lifecycle operation conflicts with the request. The response detail
+    identifies the current lifecycle state; retry after that operation finishes.
+    """
     library = await _resolve_library(library_service, library_name)
     if library is None:
         raise HTTPException(status_code=404, detail="Library not found")
     try:
         stats = await asyncio.to_thread(library_service.start_full_scan, library)
         return StartScanWithStatusResponse.from_dto(stats, library.name)
-    except LibraryAlreadyScanningError:
-        raise HTTPException(status_code=409, detail="Library is already being scanned") from None
+    except (LibraryAlreadyScanningError, LibraryOperationConflict) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     except Exception as e:
         logger.exception(f"[Web API] Error starting full scan for library {library.name}")
         raise HTTPException(
@@ -123,8 +135,8 @@ async def repair_library_tags(
     try:
         stats = await asyncio.to_thread(library_service.repair_library_tags, library)
         return StartScanWithStatusResponse.from_dto(stats, library.name)
-    except LibraryAlreadyScanningError:
-        raise HTTPException(status_code=409, detail="Library is already being scanned") from None
+    except (LibraryAlreadyScanningError, LibraryOperationConflict) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     except Exception as e:
         logger.exception(f"[Web API] Error repairing tags for library {library.name}")
         raise HTTPException(
@@ -182,11 +194,31 @@ async def reconcile_library_paths(
 @router.post("/{library_name}/write-tag", dependencies=[Depends(verify_session)], status_code=202)
 async def write_library_tags(
     library_name: str,
-    library_service: Annotated["LibraryService", Depends(get_library_service)],
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+    request: Request,
+    body: WriteTagRequest | None = Body(default=None),
+    query_overwrite: Annotated[str | None, Query(alias="overwrite")] = None,
+    library_service: Annotated["LibraryService", Depends(get_library_service)] = cast("LibraryService", None),
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)] = cast("TaggingService", None),
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)] = cast("NavidromeService", None),
 ) -> StartTagWriteResponse:
-    """Write pending file tags for a library."""
+    """Start writing pending file tags for a library.
+
+    Returns HTTP 202 with a background task ID when admitted. Returns HTTP 409
+    when scanning, another tag-write run, or target-library hydration debt
+    prevents admission; retry after the conflicting lifecycle work completes.
+    A Navidrome rescan is triggered only after all pending files are written.
+    """
+    # An omitted body is the only body-less success case. Explicit JSON null is
+    # rejected, while Pydantic handles malformed/non-object/wrong-type values
+    # before this handler and extra keys via ``WriteTagRequest``.
+    if body is None and request.headers.get("content-length", "0") != "0":
+        raise HTTPException(status_code=422, detail="Request body must be an object")
+    if query_overwrite is not None:
+        if body is None or body.overwrite != query_overwrite:
+            raise HTTPException(status_code=422, detail="overwrite must be supplied in the JSON body only")
+        raise HTTPException(status_code=422, detail="overwrite must be supplied in the JSON body only")
+    requested_mode = body.overwrite if body is not None else "none"
+
     library = await _resolve_library(library_service, library_name)
     if library is None:
         raise HTTPException(status_code=404, detail="Library not found")
@@ -204,8 +236,20 @@ async def write_library_tags(
             library,
             stop_event=stop_event,
             on_complete=trigger_navidrome_rescan,
+            requested_mode=requested_mode,
         )
-        return StartTagWriteResponse(status="started", task_id=task_id)
+        return StartTagWriteResponse(status="started", task_id=task_id, requested_mode=requested_mode)
+    except LibraryOperationConflict as e:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "LIBRARY_OPERATION_CONFLICT",
+                "operation": e.operation,
+                "scan_state": e.scan_state,
+                "tag_write_state": e.tag_write_state,
+                "not_hydrated_count": e.not_hydrated_count,
+            },
+        ) from e
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:

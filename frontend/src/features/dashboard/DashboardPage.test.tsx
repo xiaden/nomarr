@@ -64,6 +64,22 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("pipeline-state-badge")).toHaveTextContent("Awaiting calibration");
   });
 
+  it("renders normalized recovery outcomes without relying on legacy write labels", async () => {
+    vi.mocked(getWorkStatus).mockResolvedValue({
+      ...workStatus,
+      pipeline_libraries: [
+        { library_id: "library-1", name: "Recovered", state: "write_ready", library_auto_write: false, outcome: "written" },
+        { library_id: "library-2", name: "Indeterminate", state: "write_ready", library_auto_write: false, outcome: "indeterminate" },
+      ],
+    });
+
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => expect(screen.getByText("Recovered")).toBeInTheDocument());
+    expect(screen.getByText("Database metadata was projected to files.")).toBeInTheDocument();
+    expect(screen.getByText("No destructive recovery occurred; manual recovery is available.")).toBeInTheDocument();
+  });
+
   it("distinguishes a partial tag write from a drained library", async () => {
     vi.mocked(getWorkStatus).mockResolvedValue({
       ...workStatus,

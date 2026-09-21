@@ -183,9 +183,13 @@ export async function repairTags(id: string): Promise<ScanResult> {
  * Immediate response returned after starting a background tag-write job.
  * `status` is the job acceptance status (for example, `"started"`).
  */
+export type TagWriteMode = "none" | "files" | "database";
+
 export interface StartTagWriteResult {
   status: string;
   task_id: string;
+  requested_mode?: TagWriteMode;
+  outcome?: "active" | "started";
 }
 
 /**
@@ -196,9 +200,13 @@ export interface StartTagWriteResult {
  * @returns Immediate job start result.
  */
 export async function writeTags(
-  libraryId: string
+  libraryId: string,
+  mode: TagWriteMode = "none",
 ): Promise<StartTagWriteResult> {
-  return post(`/api/web/library/${encodeURIComponent(libraryId)}/write-tag`);
+  return post<StartTagWriteResult>(
+    `/api/web/library/${encodeURIComponent(libraryId)}/write-tag`,
+    { overwrite: mode },
+  );
 }
 
 export interface LibraryPipelineStatus {
@@ -212,8 +220,15 @@ export interface LibraryPipelineStatus {
   pending_write_count: number | null;
   library_auto_write: boolean;
   file_write_mode: string;
-  /** Tag-write reconcile outcome ("running" | "complete" | "partial"); absent/None is unknown. */
+  /** Legacy compatibility projection; normalized fields below are authoritative. */
   write_outcome?: string | null;
+  requested_mode?: TagWriteMode | null;
+  selected_run_counts?: Record<string, number> | null;
+  outcome?: string | null;
+  evidence_class?: "fingerprint_same" | "fingerprint_different" | "fingerprint_indeterminate" | null;
+  resumable?: boolean | null;
+  recovery_action?: string | null;
+  message_code?: string | null;
 }
 
 /**

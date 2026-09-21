@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 from nomarr.components.library.library_song_state_comp import bulk_set_tags_not_fresh
 from nomarr.components.library.reconciliation_comp import (
@@ -157,6 +157,7 @@ class TaggingWriteMixin:
         *,
         exclude_locators: set[SongIdentity] | None = None,
         retry_counts: dict[SongIdentity, int] | None = None,
+        requested_mode: Literal["none", "files", "database"] = "none",
     ) -> WriteTagsResult:
         """Execute one admitted write batch without reacquiring lifecycle state."""
         target_mode = library.file_write_mode
@@ -203,6 +204,7 @@ class TaggingWriteMixin:
                     target_mode=target_mode,
                     has_calibration=has_calibration,
                     namespace=namespace,
+                    requested_mode=requested_mode,
                 )
                 if result.success:
                     processed += 1
@@ -249,6 +251,7 @@ class TaggingWriteMixin:
         on_complete: Callable[[], None] | None = None,
         *,
         admitted: bool = False,
+        requested_mode: Literal["none", "files", "database"] = "none",
     ) -> str:
         """Dispatch a non-blocking background write-tags loop for a library.
 
@@ -299,6 +302,7 @@ class TaggingWriteMixin:
                     library,
                     exclude_locators=exclude,
                     retry_counts=retry_counts,
+                    requested_mode=requested_mode,
                 )
                 last_result = result
                 if result.remaining == 0:
@@ -358,17 +362,32 @@ class TaggingWriteMixin:
         failed_count = task_result.failed if isinstance(task_result, WriteTagsResult) else 0
 
         if in_progress:
-            outcome = "running"
+            outcome = "active"
+            message_code = "TAG_WRITE_ACTIVE"
         elif isinstance(task_result, WriteTagsResult):
-            outcome = task_result.outcome
+            # BTS completion is not success authority: only an explicit zero
+            # remaining count is a full drain (ADR-051).
+            outcome = "written" if task_result.outcome == "complete" and task_result.remaining == 0 else "partial"
+            message_code = "TAG_WRITE_COMPLETE" if outcome == "written" else "TAG_WRITE_PARTIAL"
         elif pending_count > 0:
-            outcome = "partial"
+            outcome = "not_written"
+            message_code = "TAG_WRITE_PENDING"
         else:
-            outcome = "complete"
+            outcome = "unavailable"
+            message_code = "TAG_WRITE_STATUS_UNAVAILABLE"
 
         return {
             "pending_count": pending_count,
             "failed_count": failed_count,
             "in_progress": in_progress,
             "outcome": outcome,
+            "requested_mode": None,
+            "selected_run_counts": (
+                {"processed": task_result.processed, "failed": task_result.failed, "remaining": task_result.remaining}
+                if isinstance(task_result, WriteTagsResult)
+                else None
+            ),
+            "resumable": outcome not in {"written", "unavailable"},
+            "recovery_action": "none" if outcome == "written" else "retry",
+            "message_code": message_code,
         }

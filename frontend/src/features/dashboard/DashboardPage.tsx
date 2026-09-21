@@ -234,11 +234,11 @@ export function DashboardPage() {
             ) : (
               <Stack spacing={1.25}>
                 {pipelineLibraries.map((library) => {
-                  const isPartialWrite = library.write_outcome === "partial";
+                   const isPartialWrite = library.outcome === "partial" || library.outcome === "not_written" || library.write_outcome === "partial";
                   const needsCalibration =
                     library.state === "awaiting_calibration" || library.state === "cal_ready";
-                  const needsAttention =
-                    needsCalibration || isPartialWrite || library.state === "write_ready";
+                     const needsAttention =
+                     needsCalibration || isPartialWrite || library.state === "write_ready" || Boolean(library.outcome && library.outcome !== "written");
 
                   return needsAttention ? (
                     <Alert
@@ -260,6 +260,14 @@ export function DashboardPage() {
                               ? library.state === "awaiting_calibration"
                                 ? "Calibration is required before tag writing can continue."
                                 : "Needs more tagged files before calibration can continue."
+                              : library.outcome === "written"
+                              ? "Database metadata was projected to files."
+                              : library.outcome === "indeterminate" || library.outcome === "raced" || library.outcome === "failed"
+                              ? "No destructive recovery occurred; manual recovery is available."
+                              : library.outcome === "replacement"
+                              ? "Replacement audio requires reimport and downstream ML processing."
+                              : library.outcome === "deferred"
+                              ? "Watcher work was deferred for retry."
                               : isPartialWrite
                               ? "Tag write ended with files still pending."
                               : "Ready for file writeback review."}

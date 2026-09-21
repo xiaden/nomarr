@@ -182,6 +182,18 @@
 
 3. **Check the library path** in the Web UI — it must be a subdirectory of `library_root` (typically `/media`).
 
+### Lifecycle Conflict While Scanning or Writing
+
+**Symptoms:** Starting a quick/full scan or file write returns HTTP `409 Conflict`, or logs say that watcher, pipeline, or hydration work was deferred.
+
+**Cause:** Nomarr admits scans, tag writes, and hydration against one library-scoped lifecycle state. A scan cannot start during an admitted tag write; tag writing is blocked by an active scan, another write, or files still awaiting hydration. Background workers defer conflicting work rather than marking it permanently failed.
+
+**Solution:**
+
+1. Wait for the active scan, tag write, or hydration run to finish.
+2. Retry the scan or file write from the Web UI/API. Deferred watcher and pipeline work is resumable and is picked up by a later run.
+3. Use the conflict detail and pipeline status to check `scan_state`, `tag_write_state`, and `not_hydrated` before retrying.
+
 ### Permission Denied on Music Files
 
 **Symptoms:** Scan finds files but processing fails with "Permission denied".
@@ -229,6 +241,18 @@ Then restart: `docker compose restart nomarr`
 Polling mode checks for changes every 60 seconds, which is slower than event mode but works on any filesystem.
 
 ---
+
+### Externally Modified File Remains Pending
+
+**Symptoms:** A tag-write run leaves a file pending after the file was edited outside Nomarr.
+
+**Cause:** Nomarr protects external edits by comparing the current file fingerprint with the persisted fingerprint before retrying. The result records `fingerprint_same`, `fingerprint_different`, or `fingerprint_indeterminate` evidence.
+
+**Solution:**
+
+1. For `fingerprint_same`, retry in file mode to rebaseline and write, or use database mode to refresh the database baseline without writing the file.
+2. For `fingerprint_different`, review the external edit; Nomarr replaces the database record for re-import when the replacement path is available.
+3. For `fingerprint_indeterminate`, or a `raced` retry, leave the file pending and retry after the file is stable. Pending work is resumable.
 
 ## Navidrome Connection Failures
 

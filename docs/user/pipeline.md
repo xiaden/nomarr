@@ -97,6 +97,10 @@ When this happens:
 
 To resume, start another file writeback run for the library. Nomarr attempts to write each pending file at most 3 times per run, and a new run starts with a fresh retry budget, so files still pending after one run are picked up again on the next.
 
+A scan or write request can also be rejected with HTTP `409 Conflict` while another lifecycle operation owns the library. The response detail includes the operation and the authoritative `scan_state`, `tag_write_state`, and `not_hydrated` count. Do not treat this as a permanent failure: wait for the active scan/write or hydration work to finish, then retry. Automatic watchers and pipeline workers apply the same rule by deferring work so it remains resumable.
+
+When a pending file was changed outside Nomarr, the write result records recovery evidence and a terminal outcome. Nomarr compares the current file fingerprint with the persisted fingerprint: a matching fingerprint may be rebaselined and retried in `files` mode, or refreshed in `database` mode; a different fingerprint is replaced for re-import when that recovery intent is available. A race during the retry remains pending and resumable. Review the recovery outcome before retrying a file that is still pending.
+
 ## What to expect in practice
 
 For a typical library with auto-write disabled:

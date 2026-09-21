@@ -141,10 +141,28 @@ describe("LibraryManagement", () => {
 
     await user.click(screen.getByRole("button", { name: "Write Tags" }));
 
-    await waitFor(() => {
-      expect(writeTags).toHaveBeenCalledWith("library name");
+      await waitFor(() => {
+      expect(writeTags).toHaveBeenCalledWith("library name", "none");
     });
-    expect(mockShowSuccess).toHaveBeenCalledWith("Tag write started");
+    expect(mockShowSuccess).toHaveBeenCalledWith("Tag write started (none)");
+  });
+
+  it("selects the database authority and sends it with the write request", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<LibraryManagement />);
+    await screen.findByText("library name");
+    await user.click(screen.getByRole("radio", { name: "Database" }));
+    await user.click(screen.getByRole("button", { name: "Write Tags" }));
+    await waitFor(() => expect(writeTags).toHaveBeenCalledWith("library name", "database"));
+  });
+
+  it("renders normalized partial outcome messaging", async () => {
+    vi.mocked(getWorkStatus).mockResolvedValue({
+      ...workStatusFixture,
+      pipeline_libraries: [{ ...workStatusFixture.pipeline_libraries[0], outcome: "not_written" }],
+    });
+    renderWithProviders(<LibraryManagement />);
+    await waitFor(() => expect(screen.getByText("Tag write remains pending; manual reconciliation is required.")).toBeInTheDocument());
   });
 
   it("shows an error message when starting tag reconciliation fails", async () => {

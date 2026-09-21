@@ -18,44 +18,47 @@ describe("writeTags", () => {
   });
 
   it("posts to the write-tag endpoint and returns the start result", async () => {
-    const response = { status: "started", task_id: "task123" };
+    const response = { status: "started", task_id: "task123", requested_mode: "none", outcome: "active" };
     vi.mocked(post).mockResolvedValue(response);
 
     await expect(writeTags("My Library")).resolves.toEqual(response);
 
-    expect(post).toHaveBeenCalledWith("/api/web/library/My%20Library/write-tag");
+    expect(post).toHaveBeenCalledWith("/api/web/library/My%20Library/write-tag", { overwrite: "none" });
   });
 
   it("URL-encodes special characters in the natural library name", async () => {
-    const response = { status: "started", task_id: "task123" };
+    const response = { status: "started", task_id: "task123", requested_mode: "none", outcome: "active" };
     vi.mocked(post).mockResolvedValue(response);
 
-    await expect(writeTags("Rock/Acoustic & Chill")).resolves.toEqual(response);
+    await expect(writeTags("Rock/Acoustic & Chill", "files")).resolves.toEqual(response);
 
     expect(post).toHaveBeenCalledWith(
       "/api/web/library/Rock%2FAcoustic%20%26%20Chill/write-tag",
+      { overwrite: "files" },
     );
   });
 
   it("URL-encodes Unicode names (UTF-8 percent-escaped)", async () => {
-    const response = { status: "started", task_id: "task123" };
+    const response = { status: "started", task_id: "task123", requested_mode: "none", outcome: "active" };
     vi.mocked(post).mockResolvedValue(response);
 
-    await expect(writeTags("École de Musique")).resolves.toEqual(response);
+    await expect(writeTags("École de Musique", "database")).resolves.toEqual(response);
 
     expect(post).toHaveBeenCalledWith(
       "/api/web/library/%C3%89cole%20de%20Musique/write-tag",
+      { overwrite: "database" },
     );
   });
 
   it("doubly-encodes literal percent signs in the natural name", async () => {
-    const response = { status: "started", task_id: "task123" };
+    const response = { status: "started", task_id: "task123", requested_mode: "none", outcome: "active" };
     vi.mocked(post).mockResolvedValue(response);
 
-    await expect(writeTags("100% Pure")).resolves.toEqual(response);
+    await expect(writeTags("100% Pure", "none")).resolves.toEqual(response);
 
     expect(post).toHaveBeenCalledWith(
       "/api/web/library/100%25%20Pure/write-tag",
+      { overwrite: "none" },
     );
   });
 

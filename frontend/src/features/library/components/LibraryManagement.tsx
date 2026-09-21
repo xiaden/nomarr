@@ -18,6 +18,8 @@ import {
   FormControlLabel,
   InputLabel,
   MenuItem,
+  Radio,
+  RadioGroup,
   Select,
   Stack,
   Switch,
@@ -45,6 +47,7 @@ import {
   updateWriteMode,
 } from "../../../shared/api/library";
 import { getWorkStatus, type PipelineLibrary } from "../../../shared/api/processing";
+import type { TagWriteMode } from "../../../shared/api/library";
 import { ServerFilePicker } from "../../../shared/components/ServerFilePicker";
 import type { Library } from "../../../shared/types";
 import { useLibraryVectorStats } from "../hooks/useLibraryVectorStats";
@@ -74,6 +77,7 @@ export function LibraryManagement() {
   const [showPathPicker, setShowPathPicker] = useState(false);
   const [originalFileWriteMode, setOriginalFileWriteMode] = useState<"none" | "minimal" | "full">("full");
   const [pipelineLibraries, setPipelineLibraries] = useState<PipelineLibrary[]>([]);
+  const [tagWriteMode, setTagWriteMode] = useState<TagWriteMode>("none");
 
   // Vector stats for the editing library
   const { stats: vectorStats } = useLibraryVectorStats(editingId);
@@ -470,10 +474,28 @@ export function LibraryManagement() {
   const handleWriteTags = async (libraryId: string) => {
     try {
       setError(null);
-      await writeTags(libraryId);
-      showSuccess("Tag write started");
+      await writeTags(libraryId, tagWriteMode);
+      showSuccess(`Tag write started (${tagWriteMode})`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start tag write");
+    }
+  };
+
+  const getWriteOutcomeMessage = (pipelineLibrary: PipelineLibrary | undefined): string | null => {
+    if (!pipelineLibrary?.outcome) return null;
+    switch (pipelineLibrary.outcome) {
+      case "written": return "Database metadata was projected to files.";
+      case "partial":
+      case "not_written": return "Tag write remains pending; manual reconciliation is required.";
+      case "indeterminate": return "No destructive recovery occurred because file evidence was indeterminate.";
+      case "raced":
+      case "failed": return "No destructive recovery occurred; the operation raced or failed and can be retried.";
+      case "replacement": return "Replacement audio was detected; reimport and downstream ML processing are required.";
+      case "deferred": return "Watcher work was deferred and will be retried later.";
+      case "conflict": return "This library has a lifecycle conflict; retry after the active operation completes.";
+      case "unavailable": return "The selected run result is unavailable; refresh status before retrying.";
+      case "active": return `Tag write is active (${pipelineLibrary.requested_mode ?? "none"}).`;
+      default: return null;
     }
   };
 
@@ -841,11 +863,16 @@ export function LibraryManagement() {
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
                     Auto-write: {pipelineLibrary?.library_auto_write ?? lib.libraryAutoWrite ? "Enabled" : "Disabled"}
                   </Typography>
-                  {isPartialWrite && (
-                    <Typography variant="caption" color="warning.main" sx={{ mt: 0.5, display: "block" }}>
-                      Tag write ended with files still pending.
-                    </Typography>
-                  )}
+                   {isPartialWrite && (
+                     <Typography variant="caption" color="warning.main" sx={{ mt: 0.5, display: "block" }}>
+                       Tag write ended with files still pending.
+                     </Typography>
+                   )}
+                   {getWriteOutcomeMessage(pipelineLibrary) && (
+                     <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                       {getWriteOutcomeMessage(pipelineLibrary)}
+                     </Typography>
+                   )}
                 </Box>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <Box
@@ -930,11 +957,24 @@ export function LibraryManagement() {
                 >
                   Cancel Scan
                 </Button>
-                <Button
-                  variant="outlined"
-                  color="secondary"
-                  size="small"
-                  onClick={() => handleWriteTags(lib.library_id)}
+                 <FormControl component="fieldset" size="small" sx={{ minWidth: 220 }}>
+                   <Typography variant="caption" color="text.secondary">Write authority</Typography>
+                   <RadioGroup
+                     row
+                     value={tagWriteMode}
+                     onChange={(event) => setTagWriteMode(event.target.value as TagWriteMode)}
+                     aria-label="Write authority"
+                   >
+                     <FormControlLabel value="none" control={<Radio size="small" />} label="Manual" />
+                     <FormControlLabel value="files" control={<Radio size="small" />} label="Files" />
+                     <FormControlLabel value="database" control={<Radio size="small" />} label="Database" />
+                   </RadioGroup>
+                 </FormControl>
+                 <Button
+                   variant="outlined"
+                   color="secondary"
+                   size="small"
+                   onClick={() => handleWriteTags(lib.library_id)}
                   disabled={
                     !lib.isEnabled || 
                     pipelineState === "scanning"

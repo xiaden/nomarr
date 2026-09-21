@@ -13,9 +13,9 @@ Architecture:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Literal, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from nomarr.helpers.dto import LibraryPipelineStatusDTO
 from nomarr.helpers.dto.library_dto import (
@@ -493,11 +493,21 @@ class PipelineStatusResponse(BaseModel):
         )
 
 
+class WriteTagRequest(BaseModel):
+    """Strict request body for library-scoped tag reconciliation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    overwrite: Literal["none", "files", "database"] = "none"
+
+
 class StartTagWriteResponse(BaseModel):
     """Response for starting a background tag write task."""
 
     status: str
     task_id: str
+    requested_mode: Literal["none", "files", "database"] = "none"
+    outcome: str = "active"
 
 
 class UpdateWriteModeResponse(BaseModel):
