@@ -1,193 +1,241 @@
-name: Docker Publish
+name: Container Publish
 
-# Independent Docker build/publish/promote gate. Moves the former monolithic
-# `ci.yml` `build-and-push` and `promote` jobs into their own workflow so
-# image builds are reported and attributed independently of quality, test,
-# and frontend responsibilities.
-#
-# Preserved from the original `ci.yml` (ADR-018):
-#   - triggers only on push / workflow_dispatch (never on pull_request), the
-#     same condition as the old `build-and-push` job's `if:`
-#   - push branches [main, develop, feat/**] path filters + workflow_dispatch
-#   - checkout with submodules
-#   - version/base-version extraction (nomarr/__version__.py + BASE_VERSION)
-#   - GHCR tagging contract: sha_tag=<repo>:<short-sha>, promote_tags per
-#     branch (main -> latest + v<semver>; develop -> develop + <ver>.dev<run>;
-#     other -> preview); base_tag=v$BASE_VERSION on main/develop, else
-#     sha-<short-sha> (ref-selected per F3 below)
-#   - Buildx, GHCR login, registry build cache, provenance + SBOM attestations
-#   - promote depends only on build-and-push within THIS workflow (same
-#     workflow `needs`), and only when promote_tags is non-empty
-#
-# The workflows are INDEPENDENT: docker-publish.yml has no cross-workflow
-# `needs` on, and is not a hard gate for, any other workflow in this repo, and
-# vice versa. The old monolithic ci.yml's implicit cross-workflow ordering is
-# NOT preserved here. Merge/merge-gate decisions are enforced by GitHub branch
-# protection against each workflow's independent check runs, and per-commit
-# completion of this gate (the `build-and-push` and `promote` check runs) is
-# validated separately by scripts/validate_commit.py. Nothing in this file
-# re-runs, repairs, or merges other workflows.
-#
-# F3 base-rebuild wiring (Amendment A2): there is exactly one push-triggered
-# base-image orchestrator, `docker-publish.yml`. It invokes build-base.yml as a
-# reusable workflow through a non-required `build-base` job, and `build-and-push`
-# runs only after it (`needs: build-base`). build-base.yml retains no independent
-# `push` trigger but remains reusable and manually dispatchable, with its tag
-# scheme, provenance, and SBOM attestations intact. On every ref where this
-# workflow runs (`main`, `develop`, `feat/**`, and `workflow_dispatch` on any
-# ref), every change capable of altering the base image or the resolved package
-# environment (`dockerfile.base`, `build_resources/essentia/**`,
-# `build_resources/scripts/**`, `pyproject.toml`, `uv.lock`, `.python-version`,
-# `BASE_VERSION`) as well as every ordinary source change builds the app image in
-# the same workflow run, from the same commit, after the reusable `build-base`
-# job has rebuilt and published the base for that commit. `build-and-push` pins
-# the base tag the same-run `build-base` job just published:
-# `BASE_TAG=v${BASE_VERSION}` on `main`/`develop` (where build-base.yml
-# republishes that tag) and `BASE_TAG=sha-${SHORT_SHA}` on every other ref
-# (where build-base.yml publishes `sha-${SHORT_SHA}`, unique to that commit).
-# The base tag scheme is unchanged, and the required check names remain
-# `build-and-push` and `promote`. The app image therefore never resolves a base
-# carrying dependency metadata older than the commit that produced it.
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('manual {0} -> {1}', github.ref_name, inputs.channel)
+      || format('release {0}', github.ref_name) }}
 
 on:
   push:
-    branches: [main, develop, 'feat/**']
-    paths:
-      - "nomarr/**"
-      - "tests/**"
-      - "frontend/**"
-      - "e2e/**"
-      - "dockerfile"
-      - "dockerfile.base"
-      - "docker/compose.yaml"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".python-version"
-      - "playwright.config.ts"
-      - "BASE_VERSION"
-      - "build_resources/essentia/**"
-      - "build_resources/scripts/**"
-      - ".github/workflows/docker-publish.yml"
-      - ".github/workflows/build-base.yml"
+    tags:
+      - "v*"
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "Optional non-release alias to promote"
+        required: true
+        type: choice
+        default: none
+        options:
+          - none
+          - preview
+          - develop
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  policy:
+    name: Release policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      image: ${{ steps.policy.outputs.image }}
+      sha_tag: ${{ steps.policy.outputs.sha_tag }}
+      aliases: ${{ steps.policy.outputs.aliases }}
+      version: ${{ steps.policy.outputs.version }}
+      release_kind: ${{ steps.policy.outputs.release_kind }}
+    steps:
+      - name: Classify publication
+        id: policy
+        shell: bash
+        env:
+          MANUAL_CHANNEL: ${{ inputs.channel || 'none' }}
+        run: |
+          set -euo pipefail
+
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nomarr"
+          sha_tag="${image}:sha-${GITHUB_SHA}"
+          aliases=()
+          version="sha-${GITHUB_SHA}"
+          release_kind="immutable"
+
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            if [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              major="${BASH_REMATCH[1]}"
+              minor="${BASH_REMATCH[2]}"
+              patch="${BASH_REMATCH[3]}"
+              version="${major}.${minor}.${patch}"
+              release_kind="stable"
+              aliases+=("${image}:${tag}" "${image}:${version}" "${image}:${major}.${minor}" "${image}:latest")
+            elif [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)-([0-9A-Za-z][0-9A-Za-z.-]*)$ ]]; then
+              version="${tag#v}"
+              release_kind="prerelease"
+              aliases+=("${image}:${tag}" "${image}:${version}")
+            else
+              echo "::error::Unsupported release tag '${tag}'"
+              exit 1
+            fi
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            release_kind="manual"
+            case "$MANUAL_CHANNEL" in
+              none) ;;
+              preview|develop) aliases+=("${image}:${MANUAL_CHANNEL}") ;;
+              *) echo "::error::Illegal manual channel '${MANUAL_CHANNEL}'"; exit 1 ;;
+            esac
+          else
+            echo "::error::Unsupported publication event '${GITHUB_EVENT_NAME}'"
+            exit 1
+          fi
+
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=${sha_tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "release_kind=${release_kind}" >> "$GITHUB_OUTPUT"
+          {
+            echo "aliases<<EOF"
+            printf '%s\n' "${aliases[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require successful CI for automatic release
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRED_CHECKS: ${{ vars.RELEASE_REQUIRED_CHECKS }}
+        run: |
+          set -euo pipefail
+
+          normalized="$(printf '%s' "$REQUIRED_CHECKS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)"
+          if [[ -z "$normalized" ]]; then
+            echo "::error::RELEASE_REQUIRED_CHECKS is not configured."
+            exit 1
+          fi
+
+          checks_json="$(gh api -H 'Accept: application/vnd.github+json' "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?filter=all&per_page=100")"
+          failed=0
+          while IFS= read -r required; do
+            [[ -z "$required" ]] && continue
+            if jq -e --arg name "$required" '.check_runs | any(.[]; .name == $name and .conclusion == "success")' <<< "$checks_json" >/dev/null; then
+              echo "✓ ${required}"
+            else
+              echo "::error::Required check '${required}' has no successful run for ${GITHUB_SHA}."
+              failed=1
+            fi
+          done <<< "$normalized"
+          (( failed == 0 ))
+
   build-base:
+    needs: policy
     uses: ./.github/workflows/build-base.yml
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
+      artifact-metadata: write
     secrets: inherit
 
   build-and-push:
-    needs: build-base
+    name: Build immutable image
+    needs:
+      - policy
+      - build-base
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
+      artifact-metadata: write
     outputs:
-      sha_tag: ${{ steps.tags.outputs.sha_tag }}
-      promote_tags: ${{ steps.tags.outputs.promote_tags }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           submodules: true
 
-      - name: Extract versions
-        id: versions
-        run: |
-          VERSION=$(python3 -c "exec(open('nomarr/__version__.py').read()); print(__version__)")
-          BASE_VERSION=$(cat BASE_VERSION)
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "base_version=${BASE_VERSION}" >> $GITHUB_OUTPUT
-          echo "App version: ${VERSION}"
-          echo "Base version: ${BASE_VERSION}"
-
-      - name: Compute image tags
-        id: tags
-        run: |
-          REPO="ghcr.io/${{ github.repository_owner }}/nomarr"
-          SHA="${{ github.sha }}"
-          SHORT_SHA="${SHA:0:7}"
-          VERSION="${{ steps.versions.outputs.version }}"
-          BASE_VERSION="${{ steps.versions.outputs.base_version }}"
-
-          SHA_TAG="${REPO}:${SHORT_SHA}"
-
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            SEMVER="${VERSION%.dev*}"
-            PROMOTE_TAGS="${REPO}:latest,${REPO}:v${SEMVER}"
-          elif [ "${{ github.ref_name }}" = "develop" ]; then
-            VERSION_BASE="${VERSION%.dev*}"
-            DEV_TAG="${VERSION_BASE}.dev${{ github.run_number }}"
-            PROMOTE_TAGS="${REPO}:develop,${REPO}:${DEV_TAG}"
-          else
-            PROMOTE_TAGS="${REPO}:preview"
-          fi
-          if [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "develop" ]; then
-            BASE_TAG="v${BASE_VERSION}"
-          else
-            BASE_TAG="sha-${SHORT_SHA}"
-          fi
-
-          echo "sha_tag=${SHA_TAG}" >> $GITHUB_OUTPUT
-          echo "promote_tags=${PROMOTE_TAGS}" >> $GITHUB_OUTPUT
-          echo "base_tag=${BASE_TAG}" >> $GITHUB_OUTPUT
-          echo "SHA tag: ${SHA_TAG}"
-          echo "Promote tags: ${PROMOTE_TAGS}"
-          echo "Base image tag: ${BASE_TAG}"
-
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push SHA-tagged image
-        uses: docker/build-push-action@v7
+      - name: Build and push immutable image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ./dockerfile
           push: true
           pull: true
+          tags: ${{ needs.policy.outputs.sha_tag }}
           build-args: |
-            BASE_TAG=${{ steps.tags.outputs.base_tag }}
-          tags: ${{ steps.tags.outputs.sha_tag }}
-          cache-from: |
-            type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache,mode=max
-          provenance: true
+            BASE_TAG=${{ needs.build-base.outputs.base_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.policy.outputs.version }}
+          cache-from: type=registry,ref=${{ needs.policy.outputs.image }}:buildcache
+          cache-to: type=registry,ref=${{ needs.policy.outputs.image }}:buildcache,mode=max
+          provenance: mode=max
           sbom: true
 
+      - name: Attest image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ needs.policy.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify published attestation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ needs.policy.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "${GITHUB_REPOSITORY}"
+
   promote:
-    needs: [build-and-push]
-    if: needs.build-and-push.outputs.promote_tags != ''
+    name: Promote immutable image
+    needs:
+      - policy
+      - build-and-push
+    if: needs.policy.outputs.aliases != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Promote image with release tags
+      - name: Promote digest
+        shell: bash
+        env:
+          IMAGE: ${{ needs.policy.outputs.image }}
+          DIGEST: ${{ needs.build-and-push.outputs.digest }}
+          ALIASES: ${{ needs.policy.outputs.aliases }}
         run: |
-          SHA_TAG="${{ needs.build-and-push.outputs.sha_tag }}"
-          IFS=',' read -ra TAGS <<< "${{ needs.build-and-push.outputs.promote_tags }}"
-          for TAG in "${TAGS[@]}"; do
-            echo "Tagging ${SHA_TAG} -> ${TAG}"
-            docker buildx imagetools create --tag "${TAG}" "${SHA_TAG}"
-          done
+          set -euo pipefail
+          source="${IMAGE}@${DIGEST}"
+          while IFS= read -r alias; do
+            [[ -z "$alias" ]] && continue
+            docker buildx imagetools create --tag "$alias" "$source"
+          done <<< "$ALIASES"

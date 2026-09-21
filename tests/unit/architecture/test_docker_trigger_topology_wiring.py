@@ -1,23 +1,4 @@
-"""Static trigger-topology gate for Amendment A2 (DD §13.7).
-
-Locks the corrected base-rebuild trigger contract without executing any workflow
-or invoking Docker:
-
-(a) ``docker-publish.yml`` push paths include every base-only input and both
-    Docker workflow files, so a base-only change on any ref reaches the same-run
-    base→app path;
-(b) ``docker-publish.yml`` push branches are exactly ``{main, develop,
-    'feat/**'}``;
-(c) ``build-base.yml`` declares ``workflow_call`` + ``workflow_dispatch`` and
-    has no standalone ``push`` (``docker-publish.yml`` is the single
-    push-triggered base orchestrator);
-(d) ``base-version-bump.yml`` push paths stay base-only — no dependency input
-    (``pyproject.toml``/``uv.lock``/``.python-version``/``BASE_VERSION``), hence
-    no dependency-input participation and no self-retrigger.
-
-PyYAML parses the bare ``on`` key as boolean ``True`` (YAML 1.1), so both
-spellings are read.
-"""
+"""Static trigger-topology gates for container publication."""
 
 from __future__ import annotations
 
@@ -36,10 +17,6 @@ BASE_ONLY_PATHS = {
     "build_resources/essentia/**",
     "build_resources/scripts/**",
 }
-DOCKER_WORKFLOW_PATHS = {
-    ".github/workflows/docker-publish.yml",
-    ".github/workflows/build-base.yml",
-}
 DEPENDENCY_INPUTS = {
     "pyproject.toml",
     "uv.lock",
@@ -55,34 +32,18 @@ def _load_yaml(path: Path) -> dict:
 
 
 def _on(workflow: dict) -> dict:
-    """Return the ``on:`` mapping.
-
-    PyYAML parses the bare ``on`` key as boolean True (YAML 1.1), so read both
-    spellings.
-    """
+    """Return the ``on:`` mapping (PyYAML 1.1 may parse ``on`` as ``True``)."""
     on = workflow.get("on", workflow.get(True))
     assert isinstance(on, dict), f"workflow 'on' must be a mapping, got {on!r}"
     return on
 
 
 @pytest.mark.unit
-def test_docker_publish_push_paths_cover_base_inputs_and_workflows() -> None:
-    paths = set(_on(_load_yaml(DOCKER_PUBLISH))["push"]["paths"])
-    assert paths >= BASE_ONLY_PATHS, (
-        "docker-publish push paths must include every base-only input so a base-only change on "
-        f"any ref gets same-run base→app validation; got {sorted(paths)!r}"
-    )
-    assert paths >= DOCKER_WORKFLOW_PATHS, (
-        f"docker-publish push paths must include both Docker workflow files; got {sorted(paths)!r}"
-    )
-
-
-@pytest.mark.unit
-def test_docker_publish_push_branches_are_exact() -> None:
-    branches = set(_on(_load_yaml(DOCKER_PUBLISH))["push"]["branches"])
-    assert branches == {"main", "develop", "feat/**"}, (
-        f"docker-publish push branches must be exactly main/develop/feat/**; got {sorted(branches)!r}"
-    )
+def test_docker_publish_is_release_tag_triggered_with_explicit_manual_channels() -> None:
+    on = _on(_load_yaml(DOCKER_PUBLISH))
+    assert on["push"] == {"tags": ["v*"]}
+    assert on["workflow_dispatch"]["inputs"]["channel"]["options"] == ["none", "preview", "develop"]
+    assert on["workflow_dispatch"]["inputs"]["channel"]["default"] == "none"
 
 
 @pytest.mark.unit
@@ -99,7 +60,8 @@ def test_build_base_declares_workflow_call_and_dispatch_only() -> None:
 
 @pytest.mark.unit
 def test_base_version_bump_push_paths_stay_base_only() -> None:
-    paths = set(_on(_load_yaml(BASE_VERSION_BUMP))["push"]["paths"])
+    on = _on(_load_yaml(BASE_VERSION_BUMP))
+    paths = set(on["push"]["paths"])
     assert paths == BASE_ONLY_PATHS, (
         f"base-version-bump.yml push paths must remain exactly the base-only inputs; got {sorted(paths)!r}"
     )

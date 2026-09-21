@@ -132,12 +132,12 @@ def test_build_base_job_preserves_attestation_build() -> None:
         ("packages", "write"),
         ("id-token", "write"),
         ("attestations", "write"),
+        ("artifact-metadata", "write"),
     }, f"build-base job must retain its attestation permissions; got {job['permissions']!r}"
+    assert job["outputs"]["base_tag"] == "${{ steps.tags.outputs.base_tag }}"
 
-    build_steps = [step for step in job["steps"] if step.get("uses") == "docker/build-push-action@v7"]
-    assert len(build_steps) == 1, (
-        f"build-base job must have exactly one docker/build-push-action@v7 step; got {len(build_steps)}"
-    )
+    build_steps = [step for step in job["steps"] if step.get("uses", "").startswith("docker/build-push-action@")]
+    assert len(build_steps) == 1, f"build-base job must have exactly one build-push step; got {len(build_steps)}"
     with_ = build_steps[0]["with"]
     assert with_["file"] == "./dockerfile.base", f"base build file must be ./dockerfile.base; got {with_['file']!r}"
     assert with_["push"] is True, f"base build must push; got {with_['push']!r}"
@@ -160,43 +160,21 @@ def test_docker_publish_calls_base_as_reusable_job() -> None:
 @pytest.mark.unit
 def test_docker_publish_orders_app_after_base_and_keeps_check_names() -> None:
     jobs = _load_yaml(DOCKER_PUBLISH)["jobs"]
-    assert jobs["build-and-push"]["needs"] == "build-base", (
+    assert jobs["build-and-push"]["needs"] == ["policy", "build-base"], (
         f"build-and-push must run after build-base; got {jobs['build-and-push'].get('needs')!r}"
     )
-    assert jobs["promote"]["needs"] == ["build-and-push"], (
-        f"promote must depend on build-and-push; got {jobs['promote'].get('needs')!r}"
+    assert jobs["promote"]["needs"] == ["policy", "build-and-push"], (
+        f"promote must depend on policy and build-and-push; got {jobs['promote'].get('needs')!r}"
     )
     assert {"build-and-push", "promote"} <= set(jobs), f"required check names must be preserved; got {sorted(jobs)!r}"
 
 
 @pytest.mark.unit
-def test_docker_publish_paths_cover_dependency_inputs() -> None:
+def test_docker_publish_uses_release_policy_and_manual_dispatch() -> None:
     on = _on(_load_yaml(DOCKER_PUBLISH))
-    paths = set(on["push"]["paths"])
-    assert paths >= {
-        "uv.lock",
-        ".python-version",
-        ".github/workflows/build-base.yml",
-        "pyproject.toml",
-        "BASE_VERSION",
-        "dockerfile",
-        "docker/compose.yaml",
-        "playwright.config.ts",
-        "nomarr/**",
-        "tests/**",
-        "frontend/**",
-        "e2e/**",
-        ".github/workflows/docker-publish.yml",
-    }, f"docker-publish push paths must cover all dependency inputs; got {sorted(paths)!r}"
-    assert paths >= {
-        "dockerfile.base",
-        "build_resources/essentia/**",
-        "build_resources/scripts/**",
-    }, (
-        "docker-publish push paths must also cover the base-only inputs (Amendment A2/R14) so a "
-        f"base-only change on any ref gets same-run base→app validation; got {sorted(paths)!r}"
-    )
+    assert on["push"] == {"tags": ["v*"]}
     assert "workflow_dispatch" in on, "docker-publish must remain manually dispatchable"
+    assert on["workflow_dispatch"]["inputs"]["channel"]["required"] is True
 
 
 @pytest.mark.unit
@@ -296,96 +274,67 @@ def test_build_base_caller_grants_callee_permissions() -> None:
 
 
 @pytest.mark.unit
-def test_docker_publish_selects_base_tag_by_ref_without_unguarded_default() -> None:
-    jobs = _load_yaml(DOCKER_PUBLISH)["jobs"]
-    tags_step = next(step for step in jobs["build-and-push"]["steps"] if step.get("id") == "tags")
-    run = tags_step["run"]
+def test_docker_publish_classifies_only_event_driven_release_aliases() -> None:
+    workflow = _load_yaml(DOCKER_PUBLISH)
+    on = _on(workflow)
+    assert on["push"]["tags"] == ["v*"]
+    dispatch = on["workflow_dispatch"]
+    assert dispatch["inputs"]["channel"]["options"] == ["none", "preview", "develop"]
 
-    assert 'BASE_TAG="sha-${SHORT_SHA}"' in run, (
-        "non-main/develop refs must select the same-run sha-${SHORT_SHA} base tag"
-    )
-    assert run.count('BASE_TAG="v${BASE_VERSION}"') == 1, (
-        "the version-addressed base tag must be assigned exactly once, inside the "
-        "main/develop guard (no unguarded assignment)"
-    )
-
-    guard = 'if [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "develop" ]; then'
-    guard_idx = run.find(guard)
-    assert guard_idx != -1, "Compute image tags must guard the version-addressed base tag on main/develop"
-    v_idx = run.find('BASE_TAG="v${BASE_VERSION}"')
-    else_idx = run.find("else", guard_idx)
-    sha_idx = run.find('BASE_TAG="sha-${SHORT_SHA}"')
-    assert guard_idx < v_idx < else_idx, (
-        "BASE_TAG=v${BASE_VERSION} must sit inside the main/develop branch (no unguarded assignment)"
-    )
-    assert else_idx < sha_idx, "BASE_TAG=sha-${SHORT_SHA} must be the non-main/develop branch"
+    run = next(step["run"] for step in workflow["jobs"]["policy"]["steps"] if step.get("id") == "policy")
+    assert 'GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/*' in run
+    assert 'release_kind="stable"' in run
+    assert 'release_kind="prerelease"' in run
+    assert 'release_kind="manual"' in run
+    assert "latest" in run
+    assert "preview|develop" in run
+    assert "github.ref_name" not in run, "manual aliases must not be inferred from the selected ref"
 
 
 @pytest.mark.unit
-def test_build_base_publishes_short_sha_on_all_arms_and_declares_no_output() -> None:
+def test_build_base_exposes_full_sha_output_and_publishes_it_on_all_arms() -> None:
     workflow = _load_yaml(BUILD_BASE)
     on = _on(workflow)
-    assert not on.get("workflow_call"), (
-        f"build-base must not declare workflow_call outputs; got {on.get('workflow_call')!r}"
-    )
-    assert "base_tag" not in BUILD_BASE.read_text(encoding="utf-8"), "build-base.yml must not declare a base_tag output"
+    assert on["workflow_call"]["outputs"]["base_tag"]["value"] == "${{ jobs.build-base.outputs.base_tag }}"
+    assert on["workflow_call"]["inputs"]["publish_branch_aliases"]["default"] is False
+    assert on["workflow_dispatch"]["inputs"]["publish_branch_aliases"]["default"] is True
 
     job = workflow["jobs"]["build-base"]
     tags_step = next(step for step in job["steps"] if step.get("id") == "tags")
     run = tags_step["run"]
-    assert run.count("${REPO}:sha-${SHORT_SHA}") == 3, (
-        "build-base must publish sha-${SHORT_SHA} in all three branch arms"
-    )
-    main_arm, rest = run.split("elif", 1)
-    develop_arm, else_arm = rest.split("else", 1)
-    for name, arm in (("main", main_arm), ("develop", develop_arm), ("else", else_arm)):
-        assert "${REPO}:sha-${SHORT_SHA}" in arm, (
-            f"build-base {name} arm must publish sha-${{SHORT_SHA}}; got {arm.strip()!r}"
-        )
+    assert 'base_tag="sha-${GITHUB_SHA}"' in run
+    assert 'tags=("${repo}:${base_tag}")' in run
+    assert "base_tag=${base_tag}" in run
 
 
 @pytest.mark.unit
 def test_app_build_consumes_same_run_base_and_promote_ordering() -> None:
     jobs = _load_yaml(DOCKER_PUBLISH)["jobs"]
     build_job = jobs["build-and-push"]
-    assert build_job["needs"] == "build-base", (
+    assert build_job["needs"] == ["policy", "build-base"], (
         f"build-and-push must run after the same-run base job; got {build_job.get('needs')!r}"
     )
 
-    build_steps = [step for step in build_job["steps"] if step.get("uses") == "docker/build-push-action@v7"]
-    assert len(build_steps) == 1, (
-        f"build-and-push must have exactly one docker/build-push-action@v7 step; got {len(build_steps)}"
-    )
+    build_steps = [step for step in build_job["steps"] if step.get("uses", "").startswith("docker/build-push-action@")]
+    assert len(build_steps) == 1, f"build-and-push must have exactly one build-push step; got {len(build_steps)}"
     build_args = build_steps[0]["with"].get("build-args", "")
-    assert "BASE_TAG=${{ steps.tags.outputs.base_tag }}" in build_args, (
-        f"app build must consume the ref-selected base tag; got {build_args!r}"
+    assert "BASE_TAG=${{ needs.build-base.outputs.base_tag }}" in build_args, (
+        f"app build must consume the immutable same-run base tag; got {build_args!r}"
     )
-    assert jobs["promote"]["needs"] == ["build-and-push"], (
-        f"promote must depend on build-and-push; got {jobs['promote'].get('needs')!r}"
+    assert jobs["promote"]["needs"] == ["policy", "build-and-push"], (
+        f"promote must depend on policy and build-and-push; got {jobs['promote'].get('needs')!r}"
     )
 
 
 @pytest.mark.unit
-def test_build_base_republishes_version_tag_on_main_and_develop() -> None:
-    """build-base's main/develop arms must republish v${BASE_VERSION} (DD §12 D2, R14).
-
-    docker-publish.yml ref-selects ``BASE_TAG="v${BASE_VERSION}"`` on main/develop,
-    so the base that same run builds must carry that tag. Without this, the
-    stale-base defect A1 fixed could silently return.
-    """
+def test_build_base_keeps_existing_branch_aliases_secondary_to_immutable_tag() -> None:
     job = _load_yaml(BUILD_BASE)["jobs"]["build-base"]
     tags_step = next(step for step in job["steps"] if step.get("id") == "tags")
     run = tags_step["run"]
-
-    main_arm, rest = run.split("elif", 1)
-    develop_arm, else_arm = rest.split("else", 1)
-    for name, arm in (("main", main_arm), ("develop", develop_arm)):
-        assert ":v${BASE_VERSION}" in arm, (
-            f"build-base {name} arm must republish :v${{BASE_VERSION}}; got {arm.strip()!r}"
-        )
-    assert ":v${BASE_VERSION}" not in else_arm, (
-        f"build-base else arm must not publish the version-addressed tag; got {else_arm.strip()!r}"
-    )
+    assert "latest" in run and "preview-base" in run and "v${base_version}" in run
+    assert "inputs.publish_branch_aliases || false" in run
+    assert 'tags+=("${repo}:preview-base")' not in run
+    assert run.index('tags=("${repo}:${base_tag}")') < run.index("if [[")
 
 
 @pytest.mark.unit
@@ -451,7 +400,7 @@ def test_docker_base_dry_run_precedes_real_exact_sync() -> None:
 @pytest.mark.unit
 def test_docker_publish_promote_job_retains_guard() -> None:
     promote = _load_yaml(DOCKER_PUBLISH)["jobs"]["promote"]
-    assert promote["if"] == "needs.build-and-push.outputs.promote_tags != ''", (
+    assert promote["if"] == "needs.policy.outputs.aliases != ''", (
         f"promote must keep its non-empty promote_tags guard; got {promote.get('if')!r}"
     )
 

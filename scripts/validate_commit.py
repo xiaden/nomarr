@@ -79,7 +79,7 @@ is documented not to apply to the selected trigger is reported as
 **NOT-APPLICABLE** (never counted as success, never silently ignored — it is
 explicitly listed in the report). Current applicability:
 
-* ``push`` (default) — the commit was pushed to ``main``/``develop``/``feat/*``.
+* ``push`` (default) — the commit was pushed as a release tag matching ``v*``.
   Required: backend quality (``lint``, ``deptry``), backend tests (``test``,
   ``architecture-qc``, ``database-tests``), frontend checks (``frontend-checks``),
   and Docker publish (``build-and-push``, ``promote``). ``e2e`` (manual-only),
@@ -227,19 +227,19 @@ REQUIRED_CHECKS: dict[str, CheckSpec] = {
         triggers=frozenset({"push", "pr", "manual"}),
         note="npm ci + lint + tsc + vitest + production build",
     ),
-    # Docker publish (.github/workflows/docker-publish.yml) — push/manual only,
+    # Docker publish (.github/workflows/docker-publish.yml) — release-tag push/manual only,
     # never PR (no image is published on a pull request).
     "build-and-push": CheckSpec(
         name="build-and-push",
         workflow="docker-publish.yml",
         triggers=frozenset({"push", "manual"}),
-        note="docker build/push; NOT-APPLICABLE on PRs (no PR trigger)",
+        note="docker build/push; release-tag push or explicit manual dispatch; NOT-APPLICABLE on PRs",
     ),
     "promote": CheckSpec(
         name="promote",
         workflow="docker-publish.yml",
         triggers=frozenset({"push", "manual"}),
-        note="image promote/re-tag; NOT-APPLICABLE on PRs (no PR trigger)",
+        note="image promote/re-tag; release-tag push or explicit manual dispatch; NOT-APPLICABLE on PRs",
     ),
     # E2E (.github/workflows/e2e.yml) — manual-only.
     "e2e": CheckSpec(

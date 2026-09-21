@@ -50,7 +50,7 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
   - **Backend tests** (`.github/workflows/backend-tests.yml`): `pytest tests/ -v -m "not container_only and not requires_database and not code_smell"` plus the ADR-042 architecture-QC suite run explicitly (`pytest tests/test_architecture_qc.py -v`)
   - **Database tests** (`.github/workflows/backend-tests.yml`, `database-tests` job): `pytest tests/characterization/ tests/characterization/test_mood_owner_pg.py tests/integration/test_library_uuid_locator_identity_pg.py tests/sabotage/test_no_facades_begin_transactions.py -v -m requires_database` (requires Docker; testcontainers starts `pgvector/pgvector:pg17`)
   - **Frontend checks** (`.github/workflows/frontend-checks.yml`): `npm ci`, `npm run lint`, `npx tsc -b --noEmit`, `npm run test`, and `npm run build`
-  - **Docker publish** (`.github/workflows/docker-publish.yml`): builds and publishes the image on push / `workflow_dispatch` only
+  - **Docker publish** (`.github/workflows/docker-publish.yml`): stable/prerelease `v*` tag pushes require exact-commit CI; manual dispatch may promote only `preview` or `develop`
   - **CodeQL** (`.github/workflows/codeql.yml`) on push to `main`, pull requests to `main`, and on a weekly schedule
 - Python code passes `ruff` linting and `mypy` type checking (zero errors)
 - Frontend code passes ESLint

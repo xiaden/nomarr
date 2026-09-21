@@ -72,8 +72,8 @@ The sole exception is the CodeQL matrix: `analyze` matches real runs prefixed
 | `architecture-qc` | `backend-tests.yml` | push, pr, manual |
 | `database-tests` | `backend-tests.yml` | push, pr, manual |
 | `frontend-checks` | `frontend-checks.yml` | push, pr, manual |
-| `build-and-push` | `docker-publish.yml` | push, manual |
-| `promote` | `docker-publish.yml` | push, manual |
+| `build-and-push` | `docker-publish.yml` | release-tag push, manual |
+| `promote` | `docker-publish.yml` | release-tag push, manual |
 | `e2e` | `e2e.yml` | manual |
 | `docs-check` | `docs-check.yml` | pr |
 | `analyze` | `codeql.yml` | main-target only (matrix `Analyze (<lang>)` runs; see below) |
