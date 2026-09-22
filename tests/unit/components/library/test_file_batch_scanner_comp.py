@@ -370,6 +370,7 @@ class TestScanFolderFiles:
                 f"{MODULE}.build_library_path_from_input",
                 side_effect=lambda path, _db: _make_valid_library_path(RuntimePath(path)),
             ),
+            patch(f"{MODULE}.os.listdir", return_value=names),
             patch(f"{MODULE}.now_ms", return_value=Milliseconds(111)),
         ):
             result = scan_folder_files(

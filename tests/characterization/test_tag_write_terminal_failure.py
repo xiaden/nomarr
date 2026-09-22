@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from nomarr.helpers.dto.library_dto import WriteTagsResult
     from nomarr.persistence.db import Database
 
 pytestmark = [pytest.mark.characterization, pytest.mark.requires_database]
@@ -145,7 +146,7 @@ def _run_write(
     bts: BackgroundTaskService,
     library: Library,
     *,
-    on_complete: Callable[[], None] | None = None,
+    on_complete: Callable[[WriteTagsResult], None] | None = None,
 ) -> dict:
     """Dispatch the real run and wait for a bounded terminal state."""
     stop_event = threading.Event()
@@ -291,8 +292,15 @@ class TestTerminalFailureCharacterization:
         try:
             bts = BackgroundTaskService()
             service = _make_service(db, bts)
+            pipeline = LibraryPipelineService(
+                db=db,
+                bts=bts,
+                calibration_svc=MagicMock(),
+                tagging_svc=service,
+                navidrome_svc=MagicMock(),
+            )
 
-            _run_write(service, bts, lib)
+            _run_write(service, bts, lib, on_complete=lambda result: pipeline.on_write_complete(lib, result=result))
             assert attempts.count(_FAILING_RELATIVE) == 3
 
             _run_write(service, bts, lib)
@@ -325,8 +333,8 @@ class TestTerminalFailureCharacterization:
                 navidrome_svc=navidrome,
             )
 
-            def _on_complete() -> None:
-                pipeline.on_write_complete(lib, remaining=count_files_needing_reconciliation(db, lib))
+            def _on_complete(result: WriteTagsResult) -> None:
+                pipeline.on_write_complete(lib, result=result)
 
             status = _run_write(service, bts, lib, on_complete=_on_complete)
 

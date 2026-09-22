@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import text
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryPipelineState
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto.hydration_dto import HydrateSongInput
 from nomarr.helpers.time_helper import internal_ms, now_ms
@@ -90,7 +91,9 @@ class TestHydrationAdmissionConcurrency:
             thread.join(timeout=30)
             assert not thread.is_alive()
             assert not errors
-            assert isinstance(result.get("state"), dict)
+            state = result.get("state")
+            assert isinstance(state, LibraryPipelineState)
+            assert state.tag_write_state == "writing"
         finally:
             blocker.close()
             db.library.remove_library(library)
