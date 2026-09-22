@@ -82,23 +82,52 @@ class PipelineRepository:
             self._session.commit()
 
     def admit_scan(self, library_id: int) -> dict[str, str]:
-        """Atomically admit a scan when tag writing is not active."""
+        """Atomically admit a scan when tag writing is not active.
+
+        The parent library row is locked as the serialization boundary, even
+        when no pipeline-state rows exist yet. The scan axis is then evaluated
+        and transitioned in the same short transaction, so concurrent scan and
+        tag-write admission for one library cannot both pass their predicates.
+        Raises :class:`LibraryOperationConflict` when tag writing is active.
+        """
         return self._admit(library_id, operation="scan")
 
     def admit_tag_write(self, library_id: int) -> dict[str, str]:
-        """Atomically admit tag writing when all library predicates hold."""
+        """Atomically admit tag writing when all library predicates hold.
+
+        Admission serializes on the parent library row and rejects while a scan
+        or another tag write is active, or while any song in the library remains
+        in ``not_hydrated``. The predicate check and transition to
+        ``tag_write_state=write_in_progress`` commit together. Rejection raises
+        :class:`LibraryOperationConflict` with the current lifecycle states and
+        hydration-debt count.
+        """
         return self._admit(library_id, operation="tag_write")
 
     def assert_hydration_allowed(self, library_id: int) -> None:
-        """Lock lifecycle state and reject hydration while writing is active."""
+        """Lock lifecycle state and reject hydration while writing is active.
+
+        Locks the parent library and lifecycle rows before checking the write
+        axis. The caller's hydration mutation can therefore share this lock
+        boundary; an active tag write raises :class:`LibraryOperationConflict`.
+        """
         self._assert_axis_available(library_id, operation="hydration", require_clear=WRITE_STATE_FIELD)
 
     def assert_physical_write_allowed(self, library_id: int) -> None:
-        """Lock lifecycle state and reject physical writes while scanning."""
+        """Lock lifecycle state and reject physical writes while scanning.
+
+        Locks the parent library and lifecycle rows before checking the scan
+        axis. A physical tag write is rejected with
+        :class:`LibraryOperationConflict` while scanning is active.
+        """
         self._assert_axis_available(library_id, operation="physical_write", require_clear=SCAN_STATE_FIELD)
 
     def _assert_axis_available(self, library_id: int, *, operation: str, require_clear: str) -> None:
         with map_persistence_exceptions(), self._session.begin_nested():
+            # Lock the parent row so the guard shares the admission boundary even
+            # when no pipeline-state rows exist yet.  The surrounding repository
+            # intent retains this lock through its mutation commit.
+            self._session.execute(select(_L.c.id).where(_L.c.id == library_id).with_for_update()).scalar_one()
             rows = self._session.execute(
                 select(_T.c.state_key, _T.c.state_data).where(_T.c.library_id == library_id).with_for_update()
             ).all()
@@ -120,6 +149,9 @@ class PipelineRepository:
         """Evaluate and transition one lifecycle axis in a short transaction."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
+                # The parent library row is the common serialization boundary even
+                # before either lifecycle axis has materialized a pipeline row.
+                self._session.execute(select(_L.c.id).where(_L.c.id == library_id).with_for_update()).all()
                 rows = self._session.execute(
                     select(_T.c.state_key, _T.c.state_data).where(_T.c.library_id == library_id).with_for_update()
                 ).all()

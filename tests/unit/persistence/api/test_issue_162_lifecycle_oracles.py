@@ -70,7 +70,7 @@ class _AdmissionSession:
 
     def execute(self, statement):
         self.execute_count += 1
-        if self.execute_count == 1:
+        if self.execute_count in (1, 2):
             return _Rows(self.rows)
         result = _Rows([])
         result.scalar = lambda: self.hydrated

@@ -140,6 +140,7 @@ class Database:
             # LibrarySongsDb resolves the Library natural key to the private
             # storage library_id for folder and library-scoped song intents.
             library_repo=self._library_repo,
+            app_repo=self._app_repo,
         )
         tags = LibraryTagsDb(
             session=self._scoped,

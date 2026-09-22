@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryFolder
     from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dto.hydration_dto import HydrateSongInput
+    from nomarr.persistence.database.app_repo import AppRepository
     from nomarr.persistence.database.folder_repo import FolderRepository
     from nomarr.persistence.database.library_repo import LibraryRepository
     from nomarr.persistence.database.song_hydration_repo import SongHydrationRepository
@@ -79,6 +80,7 @@ class LibrarySongsDb:
         song_state_repo: SongStateRepository,
         song_hydration_repo: SongHydrationRepository,
         library_repo: LibraryRepository,
+        app_repo: AppRepository | None = None,
     ) -> None:
         self._session = session
         self._song_repo = song_repo
@@ -86,6 +88,7 @@ class LibrarySongsDb:
         self._song_state_repo = song_state_repo
         self._song_hydration_repo = song_hydration_repo
         self._library_repo = library_repo
+        self._app_repo = app_repo
 
     def _resolve_library_id(self, library: Library) -> int:
         """Resolve a domain ``Library``'s immutable UUID to its storage row id.
@@ -617,7 +620,29 @@ class LibrarySongsDb:
         ]
 
     def replace_song_for_reimport(self, song: SongIdentity, replacement: SongReplacementInput) -> SongIdentity:
-        """Atomically remove and reinsert a locator-addressed song snapshot."""
+        """Atomically replace a locator-addressed song with a fresh scan snapshot.
+
+        The existing row is removed and the replacement row is inserted in one
+        facade-owned transaction. The new row receives initialized song-state
+        assignments (including fresh ``not_hydrated`` and ``not_written`` debt),
+        while reconciliation claims for the old row are cleaned up. The
+        replacement is addressed by ``SongIdentity`` and returns its new
+        normalized-path locator; storage row ids remain private.
+
+        Args:
+            song: Existing semantic locator to replace.
+            replacement: Filesystem path and scan metadata for the newly observed
+                file.
+
+        Returns:
+            The semantic locator of the inserted replacement row.
+
+        Raises:
+            LookupError: If ``song`` does not resolve.
+            ValueError: If the replacement scan has no normalized path.
+            RuntimeError: If the replacement row count or claim-cleanup repository
+                is invalid.
+        """
         library_id = self._resolve_library_identity(song.library)
         old = self._song_repo.get_song_by_normalized_path(library_id, song.normalized_path)
         if old is None:
@@ -634,12 +659,18 @@ class LibrarySongsDb:
         if payload["normalized_path"] is None:
             raise ValueError("replacement normalized_path must not be null")
         try:
-            self._song_repo.delete_song_uncommitted(int(old["id"]))
+            old_song_id = int(old["id"])
+            self._song_repo.delete_song_uncommitted(old_song_id)
             ids = self._song_repo.upsert_songs_for_library(library_id, [payload], commit=False)
             if len(ids) != 1:
                 raise RuntimeError("replacement insert returned an unexpected row count")
             new_id = self._song_repo.get_song_ids_by_paths(library_id, [replacement.path])[replacement.path]
             self._song_state_repo.initialize_song_states([new_id], commit=False)
+            if self._app_repo is None:
+                raise RuntimeError("replacement claim cleanup repository is unavailable")
+            self._app_repo._remove_reconcile_claim_for_song_id(
+                old_song_id, f"reconcile:{song.library.name or song.library.library_uuid}", commit=False
+            )
             self._session.commit()
         except Exception:
             self._session.rollback()
@@ -813,7 +844,25 @@ class LibrarySongsDb:
     # ------------------------------------------------------------------
 
     def refresh_hydrated_song(self, song: SongIdentity, input: HydrateSongInput, modified_time_ms: int) -> None:
-        """Refresh selected projections without transitioning hydration state."""
+        """Refresh file-derived projections without changing hydration state.
+
+        The refresh is an atomic persistence intent that replaces tag edges,
+        updates supplied metadata/duration fields, and records the observed
+        modified time. It is admitted only while the owning library is not
+        actively writing tags; the lifecycle guard is held in the same
+        repository unit of work as the mutation. Unlike :meth:`hydrate_song`,
+        it does not transition ``not_hydrated`` to ``hydrated``.
+
+        Args:
+            song: Semantic locator identifying the song to refresh.
+            input: Already-parsed file metadata and tag payload.
+            modified_time_ms: Observed filesystem modification time in epoch
+                milliseconds.
+
+        Raises:
+            LibraryOperationConflict: If tag writing is active for the owning
+                library.
+        """
         self._song_hydration_repo.refresh_hydrated_song(song, input, modified_time_ms)
 
     def hydrate_song(self, song: SongIdentity, input: HydrateSongInput) -> None:
@@ -833,11 +882,13 @@ class LibrarySongsDb:
         Idempotent for repeated inputs: re-running the same input produces
         the same persisted assignments without side effects.
 
-        This method owns its transaction boundary; callers must not manage
-        transactions.
+         This method owns its transaction boundary; callers must not manage
+         transactions. Hydration is admitted only while the owning library is
+         not actively writing tags; the lifecycle guard and all hydration
+         mutations share the same atomic repository unit of work.
 
-        Args:
-            song: Semantic locator identifying the song to hydrate.
+         Args:
+             song: Semantic locator identifying the song to hydrate.
             input: Fully-parsed hydration payload (see
                 :class:`HydrateSongInput`). Values must already be
                 extracted/parsed — persistence never calls extraction.

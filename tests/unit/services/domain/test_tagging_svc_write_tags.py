@@ -762,3 +762,62 @@ class TestCommitPendingTagsRealCallerClosure:
 
         assert result["started"] is True
         assert result["pending_files"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestReplacementAccounting:
+    """Staged replacements are applied after ordinary writes and remain debt."""
+
+    def test_replacement_is_applied_after_ordinary_write_and_is_partial(self) -> None:
+        mock_db = MagicMock()
+        mock_db.app.get_calibration_version.return_value = "calibration-v1"
+        service = _make_service(db=mock_db)
+        library = _make_library()
+        ordinary = _candidate("ordinary.mp3")
+        replaced = _candidate("replaced.mp3")
+        replacement_input = object()
+        call_order: list[str] = []
+
+        def workflow(**kwargs: object) -> SimpleNamespace:
+            file_key = kwargs["file_key"]
+            stage = kwargs["replacement_stage"]
+            if file_key == ordinary.identity:
+                call_order.append("ordinary")
+                return SimpleNamespace(success=True, terminal_outcome="written")
+            call_order.append("replaced")
+            stage.append((replaced.identity, replacement_input))
+            return SimpleNamespace(
+                success=True,
+                terminal_outcome="replaced",
+                replacement_input=(replaced.identity, replacement_input),
+            )
+
+        def replacement(file_key: SongIdentity, replacement_value: object) -> None:
+            call_order.append("replacement")
+            assert file_key is replaced.identity
+            assert replacement_value is replacement_input
+
+        mock_db.library.replace_song_for_reimport.side_effect = replacement
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
+                return_value=[ordinary, replaced],
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
+                side_effect=workflow,
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=0,
+            ),
+        ):
+            result = service.write_tags_to_files(library)
+
+        assert call_order == ["ordinary", "replaced", "replacement"]
+        assert result.processed == 1
+        assert result.failed == 0
+        assert result.remaining == 1
+        assert result.outcome == "partial"
+        mock_db.library.replace_song_for_reimport.assert_called_once_with(replaced.identity, replacement_input)

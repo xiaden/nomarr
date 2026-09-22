@@ -655,6 +655,16 @@ class AppRepository:
             self._session.commit()
         return acquired
 
+    def _remove_reconcile_claim_for_song_id(self, song_id: int, worker_id: str, *, commit: bool = True) -> bool:
+        """Remove a reconcile claim by private row id during atomic replacement."""
+        key = f"claim_reconcile_{song_id}"
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                result = self._session.execute(delete(_WC).where(_WC.c.key == key, _WC.c.worker_id == worker_id))
+            if commit:
+                self._session.commit()
+        return int(result.rowcount) > 0  # type: ignore[attr-defined]
+
     def _remove_claim(self, identity: WorkerClaimIdentity) -> bool:
         """Remove exactly one logical claim (exact key + owning worker).
 

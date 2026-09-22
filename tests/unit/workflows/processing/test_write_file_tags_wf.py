@@ -595,3 +595,44 @@ class TestWriteResultErrorFallback:
             fs_fact=FsFact(presence="unknown", kind="permission_denied", errno=13),
         )
         assert result.error == "song_record_missing"
+
+
+@pytest.mark.unit
+class TestStagedReplacement:
+    """Run-local replacement staging keeps replacement out of physical success."""
+
+    def test_different_fingerprint_with_stage_defers_replacement(
+        self, workflow: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A staged different-content recovery records replacement without applying it."""
+        workflow.db.library.get_song.return_value = _song(chromaprint="old")
+        workflow.writer_cls.return_value.write_safe.return_value = SafeWriteResult(
+            success=False, outcome="modified_externally"
+        )
+        replacement_input = object()
+        stage: list[tuple[SongIdentity, object]] = []
+        monkeypatch.setattr(
+            "nomarr.components.library.metadata_extraction_comp.compute_chromaprint_for_file",
+            lambda _path: "new",
+            raising=False,
+        )
+        monkeypatch.setattr(f"{_MODULE}._replacement_input", lambda _song, _path: replacement_input)
+
+        result = write_file_tags_workflow(
+            workflow.db,
+            workflow.identity,
+            worker_id="reconcile:lib1",
+            target_mode="full",
+            has_calibration=True,
+            replacement_stage=stage,
+        )
+
+        assert result.success is True
+        assert result.terminal_outcome == "replaced"
+        assert result.tags_written == 0
+        assert result.replacement_input == (workflow.identity, replacement_input)
+        assert stage == [(workflow.identity, replacement_input)]
+        workflow.db.library.replace_song_for_reimport.assert_not_called()
+        assert workflow.writer_cls.return_value.write_safe.call_count == 1
+        assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
+        assert workflow.written_calls == []

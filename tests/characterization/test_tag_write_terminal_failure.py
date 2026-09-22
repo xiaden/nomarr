@@ -31,8 +31,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.library.library_scan_state_comp import get_pipeline_state
+from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.library.reconciliation_comp import count_files_needing_reconciliation
-from nomarr.helpers.constants.file_states import STATE_NOT_WRITTEN, STATE_WRITTEN
+from nomarr.helpers.constants.file_states import STATE_HYDRATED, STATE_NOT_HYDRATED, STATE_NOT_WRITTEN, STATE_WRITTEN
 from nomarr.helpers.constants.pipeline_states import WRITE_NOT_WRITTEN, WRITE_STATE_FIELD
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import (
@@ -98,24 +99,31 @@ def _seed_library(db: Database, tmp_path: Path, *, library_name: str) -> tuple[L
     assert lib.library_uuid is not None
     identity = LibraryIdentity(library_uuid=lib.library_uuid, name=lib.name, root_path=lib.root_path)
 
+    song_identities: list[SongIdentity] = []
     for normalized_path in ("good.flac", _FAILING_RELATIVE):
         audio_path = tmp_path / normalized_path
         audio_path.write_bytes(f"audio-{normalized_path}".encode())
         stat = audio_path.stat()
-        db.library.add_song_to_library(
-            SongUpsertInput(
-                library=identity,
-                path=str(audio_path),
-                scan=SongScanUpdate(
-                    normalized_path=normalized_path,
-                    file_size=stat.st_size,
-                    modified_time=int(stat.st_mtime * 1000),
-                    duration_seconds=180.0,
-                    is_valid=True,
-                    scanned_at=1,
-                ),
+        song_identities.append(
+            db.library.add_song_to_library(
+                SongUpsertInput(
+                    library=identity,
+                    path=str(audio_path),
+                    scan=SongScanUpdate(
+                        normalized_path=normalized_path,
+                        file_size=stat.st_size,
+                        modified_time=int(stat.st_mtime * 1000),
+                        duration_seconds=180.0,
+                        is_valid=True,
+                        scanned_at=1,
+                    ),
+                )
             )
         )
+
+    # Exercise real write admission while preserving the negative write/tag
+    # freshness poles used by the ADR-051 characterization.
+    transition_song_state(db, song_identities, STATE_NOT_HYDRATED, STATE_HYDRATED)
     return lib, identity
 
 

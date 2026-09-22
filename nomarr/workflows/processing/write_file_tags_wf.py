@@ -57,6 +57,7 @@ class WriteResult:
     evidence_class: RecoveryEvidence | None = None
     terminal_outcome: RecoveryTerminalOutcome | None = None
     resumable: bool = True
+    replacement_input: tuple[SongIdentity, SongReplacementInput] | None = None
 
     @property
     def error(self) -> str | None:
@@ -211,6 +212,7 @@ def write_file_tags_workflow(
     has_calibration: bool,
     namespace: str = "nom",
     requested_mode: RecoveryMode = "files",
+    replacement_stage: list[tuple[SongIdentity, SongReplacementInput]] | None = None,
 ) -> WriteResult:
     """Write tags from database to an audio file based on mode.
 
@@ -227,9 +229,17 @@ def write_file_tags_workflow(
         target_mode: Desired write mode ("none", "minimal", "full")
         has_calibration: Whether calibration exists (affects mood tag filtering)
         namespace: Tag namespace (default: "nom").
-        requested_mode: Recovery policy for an externally modified file:
-            ``"files"`` rebaselines and retries when the fingerprint is the
-            same; ``"database"`` refreshes the database-side baseline instead.
+         requested_mode: Recovery policy for an externally modified file:
+             ``"files"`` rebaselines and retries when the fingerprint is the
+             same; ``"database"`` refreshes the database-side baseline instead.
+         replacement_stage: Optional run-local list shared by the enclosing
+             reconciliation pass. When a modified file has a different
+             fingerprint, its replacement snapshot is appended here instead of
+             being applied immediately. The reconciliation service applies
+             staged replacements after the ordinary candidate set is exhausted;
+             the reinserted song starts with fresh hydration and tag-write debt,
+             so this workflow reports the replacement as successful recovery but
+             not as a physical tag-write success.
 
     Returns:
         WriteResult with success status, counts, recovery evidence, terminal
@@ -391,15 +401,25 @@ def write_file_tags_workflow(
                 except (OSError, RuntimeError, ValueError, TypeError):
                     terminal_outcome = cast("RecoveryTerminalOutcome", "failed")
             elif evidence_class == "fingerprint_different":
-                replacement = getattr(db.library, "replace_song_for_reimport", None)
-                if replacement is not None:
+                # Different content is staged for the enclosing reconciliation run.
+                # It must not be re-added while tag-write authority is active: the
+                # initialized replacement is intentionally left for later hydration.
+                if replacement_stage is not None:
                     try:
-                        replacement(file_key, _replacement_input(song, library_path))
+                        replacement_stage.append((file_key, _replacement_input(song, library_path)))
                         terminal_outcome = cast("RecoveryTerminalOutcome", "replaced")
                     except (LookupError, OSError, RuntimeError, ValueError, TypeError):
                         terminal_outcome = cast("RecoveryTerminalOutcome", "failed")
                 else:
-                    terminal_outcome = cast("RecoveryTerminalOutcome", "failed")
+                    replacement = getattr(db.library, "replace_song_for_reimport", None)
+                    if replacement is not None:
+                        try:
+                            replacement(file_key, _replacement_input(song, library_path))
+                            terminal_outcome = cast("RecoveryTerminalOutcome", "replaced")
+                        except (LookupError, OSError, RuntimeError, ValueError, TypeError):
+                            terminal_outcome = cast("RecoveryTerminalOutcome", "failed")
+                    else:
+                        terminal_outcome = cast("RecoveryTerminalOutcome", "failed")
             if terminal_outcome in {"refreshed", "replaced"}:
                 _release_failed_write(db, file_key, worker_id)
                 return WriteResult(
@@ -411,6 +431,9 @@ def write_file_tags_workflow(
                     evidence_class=evidence_class,
                     terminal_outcome=terminal_outcome,
                     resumable=False,
+                    replacement_input=(file_key, replacement_stage[-1][1])
+                    if terminal_outcome == "replaced" and replacement_stage
+                    else None,
                 )
         if not result.success:
             _release_failed_write(db, file_key, worker_id)

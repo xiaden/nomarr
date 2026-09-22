@@ -158,8 +158,22 @@ class TaggingWriteMixin:
         exclude_locators: set[SongIdentity] | None = None,
         retry_counts: dict[SongIdentity, int] | None = None,
         requested_mode: Literal["none", "files", "database"] = "none",
+        replacement_stage: list[tuple[SongIdentity, Any]] | None = None,
     ) -> WriteTagsResult:
-        """Execute one admitted write batch without reacquiring lifecycle state."""
+        """Execute one admitted write batch without reacquiring lifecycle state.
+
+        Modified files whose fingerprint differs are appended to the shared
+        ``replacement_stage`` while ordinary candidates are processed. Staged
+        replacements are applied only after that candidate set is exhausted;
+        their old locators are excluded from further work in the same run. A
+        successful replacement recreates the song with initialized
+        ``not_hydrated``/``not_written`` debt, so it is not added to
+        ``processed`` as a physical tag-write success. The fresh replacement
+        debt is added explicitly to ``remaining`` and can produce a partial
+        result even when the persisted pending counter has not yet observed it.
+        """
+        if replacement_stage is None:
+            replacement_stage = []
         target_mode = library.file_write_mode
         calibration_hash = self.db.app.get_calibration_version()
         has_calibration = bool(calibration_hash)
@@ -205,9 +219,16 @@ class TaggingWriteMixin:
                     has_calibration=has_calibration,
                     namespace=namespace,
                     requested_mode=requested_mode,
+                    replacement_stage=replacement_stage,
                 )
                 if result.success:
-                    processed += 1
+                    if getattr(result, "terminal_outcome", None) == "replaced":
+                        if exclude_locators is not None:
+                            exclude_locators.add(file_key)
+                        # The workflow already appended the staged replacement
+                        # to the shared run-local list; do not enqueue it twice.
+                    else:
+                        processed += 1
                 elif result.outcome == "modified_externally":
                     logger.debug("[reconcile] Skipping modified file; will retry after rescan")
                     release_claim(self.db, file_key, worker_id)
@@ -231,7 +252,31 @@ class TaggingWriteMixin:
                 # release, so a failed release cannot break termination.
                 _record_failure(file_key, None)
 
-        remaining = count_files_needing_reconciliation(self.db, library=library)
+        # Apply staged replacements only after the ordinary candidate set is
+        # exhausted. The persistence intent atomically removes/re-adds the row;
+        # the initialized replacement remains for later hydration. Replacement
+        # locators are deliberately retained in accounting: the re-added row has
+        # fresh not_hydrated/not_written debt and is not a physical write success.
+        replacement_debt: set[SongIdentity] = set()
+        if replacement_stage:
+            replacement = getattr(self.db.library, "replace_song_for_reimport", None)
+            for file_key, replacement_input in replacement_stage[:]:
+                try:
+                    if replacement is None:
+                        raise LookupError("replacement intent unavailable")
+                    replacement(file_key, replacement_input)
+                    replacement_debt.add(file_key)
+                except (LookupError, OSError, RuntimeError, ValueError, TypeError):
+                    failed += 1
+                finally:
+                    replacement_stage.remove((file_key, replacement_input))
+
+        # Count the persisted pending union without run-local exclusions. This
+        # keeps ordinary failures visible. A replacement is fresh lifecycle debt
+        # even when the persistence counter cannot observe it in this transaction,
+        # so retain one explicit unit of debt for each successful replacement.
+        remaining = count_files_needing_reconciliation(self.db, library=library, exclude_locators=replacement_debt)
+        remaining += len(replacement_debt)
 
         logger.info(
             f"[reconcile] Library {library.name}: processed={processed}, failed={failed}, remaining={remaining}"

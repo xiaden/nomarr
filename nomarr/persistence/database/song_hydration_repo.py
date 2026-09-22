@@ -99,6 +99,13 @@ class SongHydrationRepository:
         self._pipeline_repo = pipeline_repo
 
     def assert_hydration_allowed(self, song: SongIdentity) -> None:
+        """Reject hydration when the song's parent library is tag-writing.
+
+        The lifecycle check resolves the locator's owning library and delegates
+        to :class:`PipelineRepository`, which locks the parent library and
+        pipeline rows. It is called from inside each hydration unit of work so
+        the guard protects the accompanying mutation.
+        """
         library = self._library_repo.get_library_by_uuid(song.library.library_uuid)
         if library is None:
             return
@@ -106,8 +113,16 @@ class SongHydrationRepository:
             self._pipeline_repo.assert_hydration_allowed(int(library["id"]))
 
     def refresh_hydrated_song(self, song: SongIdentity, input: HydrateSongInput, modified_time_ms: int) -> None:
-        """Refresh selected file-derived projections without changing lifecycle state."""
+        """Refresh selected file-derived projections without changing lifecycle state.
+
+        Tag edges, supplied metadata/duration values, and the observed modified
+        time are updated atomically. The hydration-admission guard runs inside
+        the same unit of work and raises :class:`LibraryOperationConflict` when
+        the owning library is actively writing tags.
+        """
         with atomic_unit_of_work(self._session):
+            if self._pipeline_repo is not None:
+                self.assert_hydration_allowed(song)
             resolved = self._resolve_song_id(song)
             song_id = int(resolved["id"])
             tag_rows = _expand_tag_rows(input.parsed_nom_tags, input.entity_tags)
@@ -136,17 +151,20 @@ class SongHydrationRepository:
              row does not already have one (one-shot).
           5. Transition ``not_hydrated`` → ``hydrated`` (preserves other axes).
 
-        A failure in any statement rolls back all preceding writes.
+         A failure in any statement rolls back all preceding writes. Hydration
+         is guarded against active tag writing inside the same unit of work, so
+         the lifecycle predicate and the state transition cannot be separated by
+         a concurrent tag-write admission.
 
-        Args:
+         Args:
             song: Locator-addressed identity of the song to hydrate.
             input: The hydration payload (parsed nom tags, entity tags,
                    metadata-cache fields, optional duration).
 
         """
-        if self._pipeline_repo is not None:
-            self.assert_hydration_allowed(song)
         with atomic_unit_of_work(self._session):
+            if self._pipeline_repo is not None:
+                self.assert_hydration_allowed(song)
             resolved = self._resolve_song_id(song)
             song_id = int(resolved["id"])
 
@@ -267,15 +285,14 @@ class SongHydrationRepository:
 
     def _hydrate_chunk(self, inputs: Sequence[tuple[SongIdentity, HydrateSongInput]]) -> None:
         """Run one chunk of hydrations as a single atomic unit of work."""
-        # Guard every owning library before the first tag/entity/metadata write.
-        # A lifecycle conflict is safety authority, not a failed chunk: it must
-        # propagate rather than being converted into a lower committed count.
-        if self._pipeline_repo is not None:
-            for library_uuid in dict.fromkeys(song.library.library_uuid for song, _ in inputs):
-                library = self._library_repo.get_library_by_uuid(library_uuid)
-                if library is not None:
-                    self._pipeline_repo.assert_hydration_allowed(int(library["id"]))
         with atomic_unit_of_work(self._session):
+            # Guard every owning library inside the same transaction as the
+            # chunk mutation. Conflicts remain typed safety outcomes.
+            if self._pipeline_repo is not None:
+                for library_uuid in dict.fromkeys(song.library.library_uuid for song, _ in inputs):
+                    library = self._library_repo.get_library_by_uuid(library_uuid)
+                    if library is not None:
+                        self._pipeline_repo.assert_hydration_allowed(int(library["id"]))
             resolved = self._resolve_song_ids_bulk([song for song, _ in inputs])
             song_ids = [row["id"] for row in resolved]
             # Build all tag rows + edges across the whole chunk (set-based).
