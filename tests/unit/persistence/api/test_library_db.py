@@ -388,6 +388,17 @@ def test_update_library_delegates() -> None:
 
 
 @pytest.mark.unit
+def test_change_write_mode_delegates() -> None:
+    db, _, _, _, _, _, _, _, pipeline_repo = _make_library_db()
+    pipeline_repo.change_write_mode = MagicMock(return_value=2)
+
+    result = db.change_write_mode(_LIB, "minimal")
+
+    assert result == 2
+    pipeline_repo.change_write_mode.assert_called_once_with(1, "minimal")
+
+
+@pytest.mark.unit
 def test_remove_library_returns_false_when_not_found() -> None:
     db, library_repo, *_ = _make_library_db()
     library_repo.get_library_by_natural_key = MagicMock(return_value=None)

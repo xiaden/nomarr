@@ -320,6 +320,38 @@ def test_set_pipeline_axis_rejects_invalid_state() -> None:
 
 
 @pytest.mark.unit
+def test_change_write_mode_delegates_and_returns_affected_count() -> None:
+    regions, library_repo, pipeline_repo = _make_regions()
+    library_repo.get_library_by_natural_key = MagicMock(return_value=_row())
+    pipeline_repo.change_write_mode = MagicMock(return_value=3)
+
+    result = regions.change_write_mode(_main_library(), "minimal")
+
+    assert result == 3
+    pipeline_repo.change_write_mode.assert_called_once_with(7, "minimal")
+
+
+@pytest.mark.unit
+def test_change_write_mode_rejects_unknown_mode_before_persistence() -> None:
+    regions, library_repo, pipeline_repo = _make_regions()
+    library_repo.get_library_by_natural_key = MagicMock(return_value=_row())
+
+    with pytest.raises(ValueError, match="Invalid file_write_mode"):
+        regions.change_write_mode(_main_library(), "ultra")
+
+    pipeline_repo.change_write_mode.assert_not_called()
+
+
+@pytest.mark.unit
+def test_change_write_mode_raises_when_natural_key_missing() -> None:
+    regions, library_repo, _ = _make_regions()
+    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+
+    with pytest.raises(LookupError):
+        regions.change_write_mode(_main_library(), "minimal")
+
+
+@pytest.mark.unit
 def test_create_library_duplicate_natural_key_delegates_to_repo() -> None:
     """Creating a library whose natural key already exists is a repo/persistence
     concern, not a facade one: the facade does not upsert or reject on duplicate

@@ -290,28 +290,45 @@ class LibraryAdminMixin:
                     root_path=normalized_root_path,
                     is_enabled=is_enabled,
                     watch_mode=watch_mode,
-                    file_write_mode=file_write_mode,
                     library_auto_write=library_auto_write,
                 )
             except DuplicateEntityError as error:
                 raise ValueError(f"Library name already exists: {name}") from error
-        elif (
-            name is not None
-            or is_enabled is not None
-            or watch_mode is not None
-            or file_write_mode is not None
-            or library_auto_write is not None
-        ):
+        elif name is not None or is_enabled is not None or watch_mode is not None or library_auto_write is not None:
             self.update_library_metadata(
                 library,
                 name=name,
                 is_enabled=is_enabled,
                 watch_mode=watch_mode,
-                file_write_mode=file_write_mode,
                 library_auto_write=library_auto_write,
             )
 
+        # A write-mode change is a lifecycle transition, not an ordinary metadata
+        # field: it must invalidate written tags coherently and serialize against
+        # active tag writes, so it is routed through its own atomic intent.
+        if file_write_mode is not None:
+            self.update_write_mode(library, file_write_mode)
+
         return self.get_library(library)
+
+    def update_write_mode(self, library: Library, file_write_mode: str) -> int:
+        """Change a library's write mode and mark affected tags for reconciliation.
+
+        The mode change and the ``tags_current`` → ``tags_not_fresh`` transition
+        are owned by one atomic persistence intent: a failed attempt leaves both
+        the previous mode and the previous freshness state intact. An admitted
+        tag write is serialized against the change and surfaces as
+        ``LibraryOperationConflict`` rather than being silently overwritten.
+
+        Args:
+            library: Domain ``Library`` (natural identity).
+            file_write_mode: New tag write mode ('none', 'minimal', or 'full').
+
+        Returns:
+            Number of songs marked for reconciliation.
+
+        """
+        return self.db.library.change_write_mode(library, file_write_mode)
 
     def delete_library(self, library: Library) -> bool:
         """Stop all library-scoped work and delete the library.
@@ -380,21 +397,21 @@ class LibraryAdminMixin:
         name: str | None = None,
         is_enabled: bool | None = None,
         watch_mode: str | None = None,
-        file_write_mode: str | None = None,
         library_auto_write: bool | None = None,
     ) -> Library:
         """Update library metadata fields.
 
         Only the provided keyword arguments are updated; omitted fields are
         left unchanged. Delegates to the ``UpdateLibraryMetadataComp``
-        component for persistence.
+        component for persistence. Write mode is deliberately excluded: changes
+        to it go through ``update_write_mode`` so the mode and tag freshness
+        stay coherent.
 
         Args:
             library: Domain ``Library`` (natural identity) to update.
             name: Optional new display name for the library.
             is_enabled: Optionally enable or disable the library.
             watch_mode: Optional watch mode (e.g. ``"polling"``, ``"inotify"``).
-            file_write_mode: Optional file write mode (``"none"``, ``"minimal"``, ``"full"``).
             library_auto_write: When True, tags are written automatically after
                 ML processing completes.
 
@@ -411,7 +428,6 @@ class LibraryAdminMixin:
             name=name,
             is_enabled=is_enabled,
             watch_mode=watch_mode,
-            file_write_mode=file_write_mode,
             library_auto_write=library_auto_write,
         )
 

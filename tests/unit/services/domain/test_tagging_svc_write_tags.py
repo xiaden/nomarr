@@ -479,6 +479,36 @@ class TestWriteTagsToFiles:
 
     @pytest.mark.unit
     @pytest.mark.mocked
+    def test_write_tags_to_files_uses_persisted_mode_over_stale_snapshot(self) -> None:
+        """A caller-held Library snapshot must not write under a superseded mode."""
+        mock_db = MagicMock()
+        mock_db.app.get_calibration_version = MagicMock(return_value=None)
+        persisted = _make_library(file_write_mode="minimal")
+        mock_db.library.get_library = MagicMock(return_value=persisted)
+        service = _make_service(db=mock_db)
+        stale_snapshot = _make_library(file_write_mode="full")
+
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
+                return_value=[_candidate()],
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=0,
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
+                return_value=SimpleNamespace(success=True),
+            ) as mock_workflow,
+        ):
+            service.write_tags_to_files(stale_snapshot)
+
+        assert mock_db.library.get_library.call_args.args == (stale_snapshot,)
+        assert mock_workflow.call_args.kwargs["target_mode"] == "minimal"
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
     def test_write_tags_to_files_partial_failure(self) -> None:
         """Non-external workflow failures should increment failed and release claims."""
         mock_db = MagicMock()

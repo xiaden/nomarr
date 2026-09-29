@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Final, Literal
 
-from nomarr.components.library.library_song_state_comp import bulk_set_tags_not_fresh
 from nomarr.components.library.reconciliation_comp import (
     claim_files_for_reconciliation,
     count_files_needing_reconciliation,
@@ -174,7 +173,13 @@ class TaggingWriteMixin:
         """
         if replacement_stage is None:
             replacement_stage = []
-        target_mode = library.file_write_mode
+        # Re-read the persisted mode: a caller-held ``Library`` snapshot (for
+        # example a pipeline dispatch captured before a mode change) must never
+        # write under a superseded mode after admission.
+        current_library = self.db.library.get_library(library)
+        if current_library is None:
+            raise LookupError(f"Library {library.name!r} no longer exists")
+        target_mode = current_library.file_write_mode
         calibration_hash = self.db.app.get_calibration_version()
         has_calibration = bool(calibration_hash)
 
@@ -382,18 +387,6 @@ class TaggingWriteMixin:
                 daemon=True,
             ),
         )
-
-    def mark_tags_not_fresh(self, library: Library) -> int:
-        """Mark all file tags in a library as not fresh.
-
-        Args:
-            library: Domain ``Library`` (natural identity).
-
-        Returns:
-            Number of files marked not fresh
-
-        """
-        return bulk_set_tags_not_fresh(self.db, library)
 
     def get_reconcile_status(self, library: Library) -> dict[str, Any]:
         """Get reconciliation status for a library.

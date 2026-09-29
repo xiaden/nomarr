@@ -17,7 +17,6 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_VECTORS_EXTRACTED,
     STATE_NOT_WRITTEN,
     STATE_PROCESSED,
-    STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
     STATE_VECTORS_EXTRACTED,
     STATE_WRITTEN,
@@ -332,16 +331,6 @@ def bulk_set_not_calibrated(db: Database) -> int:
     if not identities:
         return 0
     transition_song_state(db, identities, STATE_CALIBRATED, STATE_NOT_CALIBRATED)
-    return len(identities)
-
-
-def bulk_set_tags_not_fresh(db: Database, library: Library | None = None) -> int:
-    """Transition ``tags_current`` candidates to ``tags_not_fresh``."""
-    candidates = _state_candidates(db, STATE_TAGS_CURRENT, library)
-    identities = [candidate.identity for candidate in candidates]
-    if not identities:
-        return 0
-    transition_song_state(db, identities, STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
     return len(identities)
 
 

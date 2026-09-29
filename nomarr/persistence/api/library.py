@@ -193,6 +193,10 @@ class LibraryDb:
         """Atomically admit DB-to-file tag writing for a library."""
         return self._regions.admit_tag_write(library)
 
+    def change_write_mode(self, library: Library, file_write_mode: str) -> int:
+        """Atomically persist a write mode and mark affected written tags stale."""
+        return self._regions.change_write_mode(library, file_write_mode)
+
     def set_pipeline_axis(self, library: Library, axis: str, state: str) -> LibraryPipelineState:
         """Set one library pipeline axis and return the updated state."""
         return self._regions.set_pipeline_axis(library, axis, state)

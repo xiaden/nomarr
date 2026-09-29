@@ -151,8 +151,8 @@ class TestUpdateLibrary:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_update_library_passes_file_write_mode_to_metadata(self) -> None:
-        """Explicit file_write_mode should be forwarded to metadata updates."""
+    def test_update_library_routes_file_write_mode_through_transition(self) -> None:
+        """Explicit file_write_mode must use the atomic mode transition, not metadata."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
         library = _make_library()
         expected_result = _make_library(file_write_mode="none")
@@ -160,19 +160,14 @@ class TestUpdateLibrary:
         with (
             patch.object(mixin, "_get_library_or_error", return_value=library) as mock_get_library_or_error,
             patch.object(mixin, "update_library_metadata") as mock_update_library_metadata,
+            patch.object(mixin, "update_write_mode") as mock_update_write_mode,
             patch.object(mixin, "get_library", return_value=expected_result) as mock_get_library,
         ):
             result = mixin.update_library(library, file_write_mode="none")
 
         mock_get_library_or_error.assert_called_once_with(library)
-        mock_update_library_metadata.assert_called_once_with(
-            library,
-            name=None,
-            is_enabled=None,
-            watch_mode=None,
-            file_write_mode="none",
-            library_auto_write=None,
-        )
+        mock_update_library_metadata.assert_not_called()
+        mock_update_write_mode.assert_called_once_with(library, "none")
         mock_get_library.assert_called_once_with(library)
         assert result == expected_result
 
@@ -225,11 +220,28 @@ class TestUpdateLibrary:
             name=None,
             is_enabled=None,
             watch_mode=None,
-            file_write_mode=None,
             library_auto_write=True,
         )
         mock_get_library.assert_called_once_with(library)
         assert result == expected_result
+
+
+class TestUpdateWriteMode:
+    """Tests for ``LibraryAdminMixin.update_write_mode``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_update_write_mode_delegates_to_persistence_intent(self) -> None:
+        """The service must delegate the atomic mode transition to persistence."""
+        db = MagicMock()
+        db.library.change_write_mode.return_value = 4
+        mixin = _ConcreteAdminMixin(db, MagicMock())
+        library = _make_library()
+
+        result = mixin.update_write_mode(library, "minimal")
+
+        assert result == 4
+        db.library.change_write_mode.assert_called_once_with(library, "minimal")
 
 
 class TestDeleteLibrary:

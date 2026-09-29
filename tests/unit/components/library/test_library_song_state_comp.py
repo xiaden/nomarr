@@ -17,7 +17,6 @@ from nomarr.components.library.library_song_state_comp import (
     bulk_set_not_calibrated,
     bulk_set_not_hydrated,
     bulk_set_not_vectors_extracted,
-    bulk_set_tags_not_fresh,
     count_errored_songs,
     count_untagged_files,
     discover_next_untagged_file,
@@ -41,7 +40,6 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_PROCESSED,
     STATE_NOT_VECTORS_EXTRACTED,
     STATE_PROCESSED,
-    STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
     STATE_VECTORS_EXTRACTED,
     STATE_WRITTEN,
@@ -532,40 +530,6 @@ class TestBulkTransitions:
 
         assert result == 0
         mock_db.app.transition_song_states.assert_not_called()
-
-    @pytest.mark.unit
-    def test_bulk_set_tags_not_fresh_scopes_to_library_before_transition(self) -> None:
-        mock_db = _make_mock_db()
-        library = _library()
-        candidate = _candidate("b.mp3", library=library, states=(STATE_TAGS_CURRENT,))
-        mock_db.library.list_songs_with_state.return_value = [candidate]
-
-        result = bulk_set_tags_not_fresh(mock_db, library=library)
-
-        assert result == 1
-        mock_db.app.transition_song_states.assert_called_once_with(
-            [candidate.identity], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH
-        )
-        mock_db.library.list_songs_with_state.assert_called_once_with(
-            STATE_TAGS_CURRENT, library=_lib_identity(library)
-        )
-
-    @pytest.mark.unit
-    def test_bulk_set_tags_not_fresh_transitions_all_when_no_library(self) -> None:
-        mock_db = _make_mock_db()
-        candidates = [
-            _candidate("a.mp3", states=(STATE_TAGS_CURRENT,)),
-            _candidate("b.mp3", states=(STATE_TAGS_CURRENT,)),
-        ]
-        mock_db.library.list_songs_with_state.return_value = candidates
-
-        result = bulk_set_tags_not_fresh(mock_db)
-
-        assert result == 2
-        mock_db.app.transition_song_states.assert_called_once_with(
-            [candidate.identity for candidate in candidates], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH
-        )
-        mock_db.library.list_songs_with_state.assert_called_once_with(STATE_TAGS_CURRENT, library=None)
 
     @pytest.mark.unit
     def test_bulk_set_not_vectors_extracted_transitions_all_vector_extracted_candidates(self) -> None:

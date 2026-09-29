@@ -626,6 +626,7 @@ class TestLibraryWriteMode:
         """PATCH write-mode should project the pending-count reconciliation state."""
         library = make_library()
         mock_library_service.get_library_by_name.return_value = library
+        mock_library_service.update_write_mode.return_value = 5
         mock_tagging_service.get_reconcile_status.return_value = {"pending_count": 5}
 
         response = client.patch("/api/web/library/Test%20Library/write-mode", params={"file_write_mode": "minimal"})
@@ -636,9 +637,33 @@ class TestLibraryWriteMode:
             "requires_reconciliation": True,
             "affected_file_count": 5,
         }
-        mock_library_service.update_library.assert_called_once_with(library, file_write_mode="minimal")
-        mock_tagging_service.mark_tags_not_fresh.assert_called_once_with(library)
+        mock_library_service.update_write_mode.assert_called_once_with(library, "minimal")
         mock_tagging_service.get_reconcile_status.assert_called_once_with(library)
+
+    def test_update_write_mode_conflict_returns_409_when_tag_write_active(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """An admitted tag write must serialize the mode change, not be overwritten."""
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
+        mock_library_service.update_write_mode.side_effect = LibraryOperationConflict(
+            "write_mode", scan_state="scanned", tag_write_state="writing"
+        )
+
+        response = client.patch("/api/web/library/Test%20Library/write-mode", params={"file_write_mode": "minimal"})
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == {
+            "code": "LIBRARY_OPERATION_CONFLICT",
+            "operation": "write_mode",
+            "scan_state": "scanned",
+            "tag_write_state": "writing",
+            "not_hydrated_count": 0,
+        }
+        mock_tagging_service.get_reconcile_status.assert_not_called()
 
     def test_update_write_mode_returns_400_for_invalid_mode(
         self,
@@ -653,7 +678,7 @@ class TestLibraryWriteMode:
 
         assert response.status_code == 400
         assert response.json()["detail"] == "file_write_mode must be 'none', 'minimal', or 'full'"
-        mock_library_service.update_library.assert_not_called()
+        mock_library_service.update_write_mode.assert_not_called()
 
 
 @pytest.mark.unit

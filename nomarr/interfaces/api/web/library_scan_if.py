@@ -48,6 +48,20 @@ async def _resolve_library(library_service: "LibraryService", raw_name: str):
     return await asyncio.to_thread(library_service.get_library_by_name, name)
 
 
+def _library_conflict_response(error: LibraryOperationConflict) -> HTTPException:
+    """Build the structured 409 payload shared by lifecycle-conflict handlers."""
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "LIBRARY_OPERATION_CONFLICT",
+            "operation": error.operation,
+            "scan_state": error.scan_state,
+            "tag_write_state": error.tag_write_state,
+            "not_hydrated_count": error.not_hydrated_count,
+        },
+    )
+
+
 @router.post("/{library_name}/scan/quick", dependencies=[Depends(verify_session)])
 async def scan_library_quick(
     library_name: str,
@@ -239,16 +253,7 @@ async def write_library_tags(
         )
         return StartTagWriteResponse(status="started", task_id=task_id, requested_mode=requested_mode)
     except LibraryOperationConflict as e:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "LIBRARY_OPERATION_CONFLICT",
-                "operation": e.operation,
-                "scan_state": e.scan_state,
-                "tag_write_state": e.tag_write_state,
-                "not_hydrated_count": e.not_hydrated_count,
-            },
-        ) from e
+        raise _library_conflict_response(e) from e
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
@@ -295,14 +300,18 @@ async def update_write_mode(
     if file_write_mode not in ("none", "minimal", "full"):
         raise HTTPException(status_code=400, detail="file_write_mode must be 'none', 'minimal', or 'full'")
     try:
-        library_service.update_library(library, file_write_mode=file_write_mode)
-        await asyncio.to_thread(tagging_service.mark_tags_not_fresh, library)
+        # The mode change and the tag-freshness invalidation are one atomic
+        # persistence intent: on failure neither half is committed, so the
+        # request cannot leave a new policy with stale reconciliation state.
+        await asyncio.to_thread(library_service.update_write_mode, library, file_write_mode)
         status = await asyncio.to_thread(tagging_service.get_reconcile_status, library)
         return UpdateWriteModeResponse(
             file_write_mode=file_write_mode,
             requires_reconciliation=status["pending_count"] > 0,
             affected_file_count=status["pending_count"],
         )
+    except LibraryOperationConflict as error:
+        raise _library_conflict_response(error) from error
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:

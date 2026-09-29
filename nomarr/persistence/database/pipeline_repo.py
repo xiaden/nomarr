@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import and_, delete, distinct, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nomarr.helpers.constants.file_states import STATE_NOT_HYDRATED
+from nomarr.helpers.constants.file_states import (
+    STATE_NOT_HYDRATED,
+    STATE_TAGS_CURRENT,
+    STATE_TAGS_NOT_FRESH,
+)
 from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_DEFAULTS,
     SCAN_IN_PROGRESS,
@@ -103,6 +107,73 @@ class PipelineRepository:
         hydration-debt count.
         """
         return self._admit(library_id, operation="tag_write")
+
+    def change_write_mode(self, library_id: int, file_write_mode: str) -> int:
+        """Atomically change a library's write mode and invalidate written tags.
+
+        Serializes on the parent library row — the same boundary tag-write
+        admission uses — and refuses while a tag write is admitted
+        (``tag_write_state == writing``). The persisted mode and the
+        ``tags_current`` → ``tags_not_fresh`` transition commit together, so a
+        failure anywhere leaves both the previous mode and the freshness state
+        untouched and a retry starts from a coherent state. Returns the number
+        of songs marked for reconciliation.
+
+        Raises:
+            LibraryOperationConflict: When a tag write is currently admitted.
+        """
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                self._session.execute(select(_L.c.id).where(_L.c.id == library_id).with_for_update()).scalar_one()
+                rows = self._session.execute(
+                    select(_T.c.state_key, _T.c.state_data).where(_T.c.library_id == library_id).with_for_update()
+                ).all()
+                values = PIPELINE_DEFAULTS.copy()
+                for row in rows:
+                    values[row._mapping["state_key"]] = (row._mapping["state_data"] or {}).get(
+                        "state", values[row._mapping["state_key"]]
+                    )
+                if values[WRITE_STATE_FIELD] == WRITE_IN_PROGRESS:
+                    raise LibraryOperationConflict(
+                        "write_mode",
+                        scan_state=values[SCAN_STATE_FIELD],
+                        tag_write_state=values[WRITE_STATE_FIELD],
+                    )
+                self._session.execute(
+                    update(_L)
+                    .where(_L.c.id == library_id)
+                    .values(file_write_mode=file_write_mode, updated_at=int(time.time() * 1000))
+                )
+                tags_current_id = select(_SS.c.id).where(_SS.c.name == STATE_TAGS_CURRENT).scalar_subquery()
+                stale_song_ids = (
+                    self._session.execute(
+                        delete(_SSA)
+                        .where(
+                            _SSA.c.state_id == tags_current_id,
+                            _SSA.c.song_id.in_(select(_S.c.id).where(_S.c.library_id == library_id)),
+                        )
+                        .returning(_SSA.c.song_id)
+                    )
+                    .scalars()
+                    .all()
+                )
+                if stale_song_ids:
+                    tags_not_fresh_id = self._session.execute(
+                        select(_SS.c.id).where(_SS.c.name == STATE_TAGS_NOT_FRESH)
+                    ).scalar_one()
+                    now = int(time.time() * 1000)
+                    self._session.execute(
+                        pg_insert(_SSA)
+                        .values(
+                            [
+                                {"song_id": song_id, "state_id": tags_not_fresh_id, "created_at": now}
+                                for song_id in stale_song_ids
+                            ]
+                        )
+                        .on_conflict_do_nothing(index_elements=["song_id", "state_id"])
+                    )
+            self._session.commit()
+            return len(stale_song_ids)
 
     def assert_hydration_allowed(self, library_id: int) -> None:
         """Lock lifecycle state and reject hydration while writing is active.

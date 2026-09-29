@@ -30,6 +30,9 @@ from nomarr.persistence.mappers.library_mapper import (
     library_update_payload,
 )
 
+_FILE_WRITE_MODES = ("none", "minimal", "full")
+
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
@@ -203,6 +206,21 @@ class LibraryRegionsDb:
                 not_hydrated_count=1,
             )
         return LibraryPipelineState.from_mapping(state)
+
+    def change_write_mode(self, library: Library, file_write_mode: str) -> int:
+        """Atomically persist a write mode and mark affected written tags stale.
+
+        The mode update and the ``tags_current`` → ``tags_not_fresh`` transition
+        commit together; the intent serializes against active tag writes and
+        raises ``LibraryOperationConflict`` while one is admitted. Returns the
+        number of songs marked for reconciliation.
+        """
+        if file_write_mode not in _FILE_WRITE_MODES:
+            raise ValueError(f"Invalid file_write_mode: {file_write_mode!r}")
+        library_id = self._resolve_library_id(library)
+        if library_id is None:
+            raise LookupError(f"Library {library.name!r} does not exist")
+        return self._pipeline_repo.change_write_mode(library_id, file_write_mode)
 
     def set_pipeline_axis(self, library: Library, axis: str, state: str) -> LibraryPipelineState:
         """Set one library pipeline axis and return the updated state.
